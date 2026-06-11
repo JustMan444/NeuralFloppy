@@ -4,19 +4,19 @@
 
 ## Versions
 ---
-NeuralFloppy 1.0          *Manual basic version of the script // Ручная базовая версия скрипта*
-NeuralFloppyAPI 1.0       *The basic version of the script for working with the API // Базовая версия скрипта для работы с API*
-NeuralFloppyLocal 1.0     *The basic version of the script for working with local models // Базовая версия скрипта для работы с локальными моделями*
-NeuralFloppyTool 1.1      *Multi-functional version for full operation // Многофункциональная версия для полной работы*
-NeuralFloppyCLI 1.1       *Manual augmented version of the script // Ручная дополненная версия скрипта*
-NeuralFloppyAPI_CLI 1.1   *An expanded version of the script for working with the API // Дополненная версия скрипта для работы с API*
-NeuralFloppyLocal_CLI 1.1 *An expanded version of the script for working with local models // Дополненная версия скрипта для работы с локальными моделями*
-NeuralFloppyTool 1.2      *Adding streaming and auto-save support // Добавление поддержки стриминга и авто-сохранений*
-NeuralFloppyTool 1.3      *Fixing the encoding bug and adding a web interface // Исправление бага кодировки и добавления веб интерфейса*
-NeuralFloppyTool 1.4      *Adding multiple console commands and interface improvements // Добавление множества консольных команд и улучшения интерфейса*
-NeuralFloppyTool 1.5V     *Adding embeddings // Добавление эмбедингов *
-NeuralFloppyTool 1.6+     *Auto-person changes // Авто-изменения персоны*
-NeuralFloppyTool 1.7      *In Development... // В разработке...* 🚀
+- NeuralFloppy 1.0          *Manual basic version of the script // Ручная базовая версия скрипта*
+- NeuralFloppyAPI 1.0       *The basic version of the script for working with the API // Базовая версия скрипта для работы с API*
+- NeuralFloppyLocal 1.0     *The basic version of the script for working with local models // Базовая версия скрипта для работы с локальными моделями*
+- NeuralFloppyTool 1.1      *Multi-functional version for full operation // Многофункциональная версия для полной работы*
+- NeuralFloppyCLI 1.1       *Manual augmented version of the script // Ручная дополненная версия скрипта*
+- NeuralFloppyAPI_CLI 1.1   *An expanded version of the script for working with the API // Дополненная версия скрипта для работы с API*
+- NeuralFloppyLocal_CLI 1.1 *An expanded version of the script for working with local models // Дополненная версия скрипта для работы с локальными моделями*
+- NeuralFloppyTool 1.2      *Adding streaming and auto-save support // Добавление поддержки стриминга и авто-сохранений*
+- NeuralFloppyTool 1.3      *Fixing the encoding bug and adding a web interface // Исправление бага кодировки и добавления веб интерфейса*
+- NeuralFloppyTool 1.4      *Adding multiple console commands and interface improvements // Добавление множества консольных команд и улучшения интерфейса*
+- NeuralFloppyTool 1.5V     *Adding embeddings // Добавление эмбедингов *
+- NeuralFloppyTool 1.6+     *Auto-person changes // Авто-изменения персоны*
+- NeuralFloppyTool 1.7      *In Development... // В разработке...* 🚀
 ---
 ## English
 
