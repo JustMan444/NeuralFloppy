@@ -1,4 +1,4 @@
-# 💾 NeuralFloppy TOOL (v1.7 In Development)
+# 💾 NeuralFloppy TOOL (v1.9 In Development)
 
 [English](#english) | [Русский](#русский)
 
@@ -22,7 +22,7 @@
 
 > **"A script that will give eternal memory to AI models."** — An autonomous, asynchronous AI-mentor engine with adaptive digital soul evolution, packed into a lightweight Java monolith. No Python overhead, no external databases, no cloud censorship. Clean engineering for Senior developers and game dev.
 
-### 🚀 Architectural Features
+### Architectural Features
 
 - **736-Dimensional Semantic Space (RAG):** Natively integrated with `nomic-embed-text` via Ollama API. The entire history of your development logs (`BlockNet`, `Just_bot`) is laid out on a vector grid in RAM. Semantic search finds context and intent in < 10 milliseconds instead of matching keywords.
 - **Local Vector Cache:** Upon server startup, the Java backend instantly loads thousands of pre-calculated 736D embeddings from a local JSON file. Zero CPU/GPU overhead on restarts.
@@ -30,7 +30,7 @@
 - **Cyberpunk Web UI (Port 8080):** A minimalist, high-contrast control panel in Fallout/Matrix terminal style. Complete interactive control over temperature sliders, model selection, and smooth, real-time UTF-8 chunk streaming directly to the browser.
 - **Dual-Rail Inference:** Instant switching between total offline autonomy (`:mode local` via Ollama) and giant cloud MoE models (`:mode api` via OpenRouter, e.g., `openai/gpt-oss-120b:free`).
 
-### 🛠 Command Contract (`:help`)
+### Command Contract (`:help`)
 
 ```bash
 :mode api|local|manual - Switch inference rails
@@ -44,7 +44,7 @@
 :exit                  - Safely shutdown the monolith
 ```
 
-### 📦 Quick Start
+### Quick Start
 
 1. **Compile the Monolith:**
    ```bash
@@ -65,14 +65,14 @@ Licensed under the **GNU General Public License v3 (GPL v3)**.
 
 > **«Скрипт, который даст вечную память ИИ-моделям».** — Автономный асинхронный движок ИИ-наставника с динамической эволюцией цифровой души, упакованный в легковесный Java-монолит. Никаких питоновских костылей, внешних баз данных и облачной цензуры. Чистая инженерия для Senior-разработчиков и геймдева.
 
-### 🚀 Архитектурные Фичи
+### Функции
 
 - **736-Мерное Семантическое Пространство (RAG):** Нативно интегрирован с `nomic-embed-text` через Ollama API. Вся история твоих логов разработки раскладывается по координатной сетке смыслов в ОЗУ. Поиск ищет не буквы, а контекст и суть за < 10 миллисекунд!
 - **Локальный Кэш Векторов:** При старте сервера бэкенд мгновенно подтягивает тысячи готовых 736D-эмбеддингов из локального JSON-файла. Ноль нагрузки на процессор при перезапусках.
 - **Динамический Синтез Эго (`:persona auto <N>`):** Прорыв в области когнитивного софта. ИИ сам фоновым потоком анализирует историю диалогов и полностью переписывает/дополняет свой системный промпт, подстраиваясь под твои текущие геймдев-задачи на лету.
 - **Киберпанк Web UI (Порт 8080):** Минималистичная, контрастная панель управления в стиле Fallout/Matrix. Полный интерактивный контроль: ползунки температуры, переключение моделей и живой, плавный UTF-8 стриминг чанков прямо в браузер.
 
-### 📦 Быстрый Старт
+### Быстрый Старт
 
 1. **Сборка Монолита:**
    ```bash
@@ -85,7 +85,7 @@ Licensed under the **GNU General Public License v3 (GPL v3)**.
 3. **Выход в Сеть:**
    Введи в консоли команду `:web` и открывай браузер на `http://localhost:8080`.
 
-### ⚖️ Лицензия и Права
+
 
 Проект защищён под лицензией **GNU General Public License v3 (GPL v3)**. 
 
