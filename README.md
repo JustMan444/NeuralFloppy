@@ -164,4 +164,6 @@ API работает **всегда**, но сервер не отвечает, 
 
 Проект защищён под лицензией **GNU General Public License v3 (GPL v3)**. 
 
+
+AI was used to create the project.
 Copyright (C) 2026 Just_Man444 (NeuralFloppy Author). All rights reserved.{content: }
