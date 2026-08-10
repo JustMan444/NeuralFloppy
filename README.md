@@ -1,4 +1,4 @@
-# 💾 NeuralFloppy TOOL (v1.9 In Development)
+# 💾 NeuralFloppy TOOL (v2.0 In Development)
 
 [English](#english) | [Русский](#русский)
 
@@ -16,7 +16,12 @@
 - NeuralFloppyTool 1.4      *Adding multiple console commands and interface improvements // Добавление множества консольных команд и улучшения интерфейса*
 - NeuralFloppyTool 1.5V     *Adding embeddings // Добавление эмбедингов *
 - NeuralFloppyTool 1.6+     *Auto-person changes // Авто-изменения персоны*
-- NeuralFloppyTool 1.7      *In Development... // В разработке...* 🚀
+- NeuralFloppyTool 1.7      *Long memory (SQLite) // Долгая память (SQLite)*
+- NeuralFloppyTool 1.8      *The choice of embedding model, adaptive context // Выбор эмбеддинг-модели, адаптивный контекст*
+- NeuralFloppyTool 1.9      *Web search, reflections, browser streaming // Веб-поиск, размышления, стриминг в браузер*
+- NeuralFloppyTool 1.9      *Web search, reflections, browser streaming // Веб-поиск, размышления, стриминг в браузер*
+- NeuralFloppyTool 1.9.1    *Fixing bugs and adding convenient commands from the 2.0 plan // Фикс багов и добавление удобных команд из плана 2.0*
+- NeuralFloppyTool 1.9.2+    *Game API, Q-Agent, memory speakers, presets // Добавление API добавление отдельного модуля для q-обучения а так же возможность базового моддинга имеет много багов в разработке*
 ---
 ## English
 
@@ -59,6 +64,44 @@
 
 Licensed under the **GNU General Public License v3 (GPL v3)**. 
 Используйте код с осторожностью.Copyright (C) 2026 Just_Man444 (NeuralFloppy Author). All rights reserved.
+
+### 🧠 Architect's Advice
+
+**EN** | I'm the architect of this project. Let me give you a quick briefing on the API.
+
+The API itself runs **constantly**, but the server will not answer until you turn it on with the right command.  
+**IMPORTANT:** launching the server via `:web` opens two ports:
+
+- **`/api/game`** – safe port. The `commands` field is completely ignored. Use it for all untrusted requests.
+- **`/api/full-control`** – dangerous port. It has a special `commands` field that executes console commands. Two commands are **permanently blocked**: `:exit` (shutdown) and `:memory delete all` (wipe all columns).
+
+#### 📋 Format Behavior Quick Reference
+
+| Format | LLM | Generates Answer | Writes to Memory | Best Friend |
+|--------|:---:|:----------------:|:-----------------:|-------------|
+| `observer` | ❌ | ❌ | ✅ | `q-agent` columns |
+| `looker` | ✅ | ❌ | ✅ | Storybooks |
+| `action-only` | ✅ | ✅ | ✅ | Reflexes |
+| `chat` | ✅ | ✅ | ✅ | Dialogues |
+
+**`observer`** only writes data – no changes, no generation. It is **perfect for `q-agent`** when paired with the right column type.  
+**`looker`** is a storyteller: it asks the LLM to describe the event beautifully, but never trust it with precise game coordinates.
+
+#### 🧠 Column Types
+
+| Type | Engine | Response Time |
+|------|--------|:-------------:|
+| `classic` | LLM + Embeddings | ~1–2 sec |
+| `q-agent` | HashMap + Nearest Neighbors | **< 10 ms** |
+
+Always use **`q-agent`** for real-time NPC decisions.  
+Always use **`classic`** for strategic reasoning or dialogues.
+
+If you make a mistake – read the error code in the response. The server **never crashes** by design.  
+And remember: you can always type `:help` in the console. I left all the answers there.
+
+---
+
 ---
 
 ## Русский
@@ -85,6 +128,44 @@ Licensed under the **GNU General Public License v3 (GPL v3)**.
 3. **Выход в Сеть:**
    Введи в консоли команду `:web` и открывай браузер на `http://localhost:8080`.
 
+
+
+
+
+
+
+**RU** | Я архитектор этого проекта. Проведу короткий инструктаж по API.
+
+API работает **всегда**, но сервер не отвечает, пока ты не включишь его специальной командой.  
+**ВАЖНО:** запуск сервера `:web` открывает два порта:
+
+- **`/api/game`** – безопасный порт. Поле `commands` полностью игнорируется. Используй его для всех ненадёжных запросов.
+- **`/api/full-control`** – опасный порт. В нём есть специальное поле `commands`, исполняющее консольные команды. Две команды **заблокированы навсегда**: `:exit` (выключение) и `:memory delete all` (удаление всех колонок).
+
+#### 📋 Кратко о поведении форматов
+
+| Формат | LLM | Генерирует ответ | Запись в память | Лучший друг |
+|--------|:---:|:----------------:|:---------------:|-------------|
+| `observer` | ❌ | ❌ | ✅ | колонки `q-agent` |
+| `looker` | ✅ | ❌ | ✅ | Книги сказок |
+| `action-only` | ✅ | ✅ | ✅ | Рефлексы |
+| `chat` | ✅ | ✅ | ✅ | Диалоги |
+
+**`observer`** только записывает информацию – без изменений, без генерации. **Идеален для `q-agent`** в связке с нужным типом колонки.  
+**`looker`** – рассказчик: просит LLM красиво описать событие, но никогда не доверяй ему точные игровые координаты.
+
+#### 🧠 Типы колонок
+
+| Тип | Движок | Время ответа |
+|------|--------|:------------:|
+| `classic` | LLM + Эмбеддинги | ~1–2 сек |
+| `q-agent` | HashMap + Поиск соседей | **< 10 мс** |
+
+Всегда используй **`q-agent`** для рефлексов NPC в реальном времени.  
+Всегда используй **`classic`** для стратегических советов и диалогов.
+
+Если ошибся – читай код ошибки в ответе. Сервер **никогда не падает** по своей вине.  
+И запомни: ты всегда можешь ввести `:help` в консоли. Я оставил там все ответы.
 
 
 Проект защищён под лицензией **GNU General Public License v3 (GPL v3)**. 
