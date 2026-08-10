@@ -53,11 +53,11 @@
 
 1. **Compile the Monolith:**
    ```bash
-   javac -encoding UTF-8 -cp "lib/gson-2.10.1.jar" src/tool/NeuralFloppyTool1_6.java -d out
+   javac -encoding UTF-8 -cp "lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" src/tool/NeuralFloppyTool1_9_2.java src/tool/GameAPI.java src/tool/MemoryManager.java -d out
    ```
 2. **Launch the Server:**
    ```bash
-   java -Dfile.encoding=UTF-8 -cp "out;lib/gson-2.10.1.jar" Tool.NeuralFloppyTool1_6
+   java -Dfile.encoding=UTF-8 -cp "out;lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" Tool.NeuralFloppyTool1_9_2
    ```
 
 ### ⚖️ License & Rights
@@ -119,20 +119,14 @@ And remember: you can always type `:help` in the console. I left all the answers
 
 1. **Сборка Монолита:**
    ```bash
-   javac -encoding UTF-8 -cp "lib/gson-2.10.1.jar" src/tool/NeuralFloppyTool1_6.java -d out
+   javac -encoding UTF-8 -cp "lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" src/tool/NeuralFloppyTool1_9_2.java src/tool/GameAPI.java src/tool/MemoryManager.java -d out
    ```
 2. **Запуск Бортового Сервера:**
    ```bash
-   java -Dfile.encoding=UTF-8 -cp "out;lib/gson-2.10.1.jar" Tool.NeuralFloppyTool1_6
+   java -Dfile.encoding=UTF-8 -cp "out;lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" Tool.NeuralFloppyTool1_9_2
    ```
 3. **Выход в Сеть:**
    Введи в консоли команду `:web` и открывай браузер на `http://localhost:8080`.
-
-
-
-
-
-
 
 **RU** | Я архитектор этого проекта. Проведу короткий инструктаж по API.
 
