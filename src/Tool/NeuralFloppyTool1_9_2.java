@@ -712,35 +712,54 @@ public class NeuralFloppyTool1_9_2 {
             case ":help" -> {
                 if (parts.length > 1 && parts[1].equalsIgnoreCase("all")) {
                     System.out.println("""
-            ===== БАЗОВЫЕ КОМАНДЫ =====
-            :mode api|local|manual|programmers
-            :model <имя>            - сменить модель
-            :models                 - список локальных моделей
-            :status                 - состояние Tool
-            :embed on|off           - вкл/выкл эмбеддинги
-            :embed build            - построить эмбеддинги
-            :web                    - открыть веб-интерфейс
-            :exit                   - выход
-
-            ===== РАСШИРЕННЫЕ КОМАНДЫ =====
-            :embed auto <N>         - авто-перестроение
-            :embed model <имя>      - выбор модели эмбеддингов
-            :preset <имя>           - режим производительности (eco, balanced, sport, uaz-200)
-            :presets                - список пресетов
-            :theme <имя>            - стиль Web UI
-            :themes                 - список тем
-            :memory new|use|list|default|status|search|auto|purge
-            :storage default|short|long|archive
-            :game off|status|list|memory|clear|export
-            :persona auto|save|load|new
-            :silent on|off
-            :compress on|off
-            :context dynamic|static
-            :remember
-            :summarize
-            :import <файл>
-            :apikey <ключ>
-            :apiserver <url>
+                    :mode api|local|manual|programmers  - переключить режим
+                    :model <имя>            - сменить модель
+                    :think on|off           - включить/выключить режим размышлений
+                    :websearch on|off       - включить/выключить авто-поиск в интернете
+                    :persona                - показать текущую персону
+                    :persona save <имя>     - сохранить персону в профиль
+                    :persona load <имя>     - загрузить персону из профиля
+                    :persona new <имя>      - создать новый профиль
+                    :autosave on|off        - вкл/выкл автосохранение
+                    :stream on|off          - вкл/выкл потоковый вывод
+                    :status                 - показать состояние Tool
+                    :models                 - список локальных моделей
+                    :save                   - сохранить сессию в архив
+                    :exit                   - выход
+                    :web                    - открыть чат в браузере
+                    :embed build            - построить эмбеддинги
+                    :embed on|off           - вкл/выкл семантический поиск
+                    :embed auto <N>         - авто-перестроение каждые N сообщений
+                    :embed status           - состояние движка
+                    :persona auto           - обновить персону через ИИ
+                    :persona auto <N>       - авто-обновление каждые N сообщений
+                    :persona auto off       - отключить авто-обновление
+                    :remember               - сжать последние 10 сообщений
+                    :memory migrate         - миграция JSON в SQLite
+                    :memory status          - состояние долгой памяти
+                    :memory search <текст>  - текстовый поиск по памяти
+                    :memory auto <N>        - авто-сжатие каждые N сообщений
+                    :memory purge <дни>     - удалить старые записи
+                    :memorн default <имя>   - установить дефолтную колонку памяти
+                    :summarize              - сводка последних 20 сообщений
+                    :import <файл>          - импорт JSON-диалогов
+                    :think on|off           - размышление
+                    :websearch on|off       - поиск в интернете
+                    :theme <имя> <уровень>  - применить тему (1=CSS, 2=CSS+HTML, 3=CSS+HTML+JS)
+                    :theme off              - сбросить тему
+                    :preset                 - пресеты!
+                    :themes                 - показать список доступных тем
+                    :presets                - показать список доступных пресетов
+                    :game off               - отключить api
+                    :game status            - получить статус mode programmers
+                    :game list              - получить все колонки памяти (for easy mode in api)
+                    :game memory <колонка>  -  создать колонку
+                    :game clear <колонка>   - удалить данные из колонки
+                    :game export <колонка>  - экспортировать колонку 
+                    :storage default|short|long|archive - выбрать тип архитектуру не рекомендуется для личного использования
+                    :silent on|off          - только запись 
+                    :compress on|off        - авто-сжатие
+                    :context dynamic|static -заморозить контекст
             """);
                 } else {
                     System.out.println("""
