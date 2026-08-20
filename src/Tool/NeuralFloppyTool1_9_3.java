@@ -5,10 +5,12 @@ import com.google.gson.JsonElement;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.*;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.sql.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -19,7 +21,7 @@ import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
 import java.net.URLEncoder;
 
-public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
+public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
@@ -49,12 +51,11 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
     private static boolean thinkingEnabled = false;
     private static boolean webSearchEnabled = false;
 
-
-
     // Эмбеддинги
     private static boolean embedEnabled = false;
     private static int embedAutoThreshold = 0; // 0 = выключено
     private static int embedNewCount = 0;
+    private static boolean embedBuildInProgress = false;
 
     private static int personaAutoThreshold = 0; // 0 = выключено
     private static int personaNewCount = 0;
@@ -64,19 +65,55 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
 
     public static void main(String[] args) throws Exception {
         ensureDirectoriesAndFiles();
+        DatabaseManager.initDatabase();
+
+        try {
+            List<String[]> dbMessages = DatabaseManager.loadMessagesFromDb();
+            if (!dbMessages.isEmpty()) {
+                messages.clear();
+                wordIndex.clear();
+                for (String[] m : dbMessages) {
+                    Message msg = new Message(m[0], m[1], Long.parseLong(m[2]));
+                    messages.add(msg);
+                    addToIndex(msg, messages.size() - 1);
+                }
+                System.out.println("Загружено из базы: " + messages.size() + " сообщений.");
+            } else {
+                buildIndex(); // загрузка из NDJSON
+                for (Message m : messages) {
+                    DatabaseManager.saveMessageToDb(m.role, m.content, m.ts);
+                }
+                System.out.println("Загружено из NDJSON и мигрировано в базу: " + messages.size());
+            }
+        } catch (SQLException e) {
+            System.out.println("Ошибка базы: " + e.getMessage());
+            buildIndex(); // fallback на NDJSON
+        }
+        try {
+            EmbeddingEngine.load();
+            System.out.println("Эмбеддинги загружены из SQLite: " + EmbeddingEngine.vectors.size() + " векторов.");
+        } catch (Exception e) {
+            System.out.println("Ошибка загрузки эмбеддингов из базы: " + e.getMessage());
+            // fallback: пробуем JSON, если есть
+            if (Files.exists(Path.of("data/embeddings.json"))) {
+                System.out.println("Пробуем загрузить из embeddings.json...");
+                try {
+                    // Здесь вызов старого метода load, если он ещё есть
+                } catch (Exception ex) { /* игнорируем */ }
+            }
+        }
         ensureOllamaInstalled();
         ensureOllamaRunning();
         currentPersona = Files.readString(Path.of(PERSONA_FILE));
-        buildIndex();
         ensureEmbeddingModel();
         if (Files.exists(Path.of("data/embeddings.json"))) {
             EmbeddingEngine.load();
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
-        NeuralFloppyTool1_9_2 app = new NeuralFloppyTool1_9_2();
+        NeuralFloppyTool1_9_3 app = new NeuralFloppyTool1_9_3();
         GameAPI.setCore(app);
 
-        System.out.println("NeuralFloppy TOOL V1.9.2/*. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL V1.9.3/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -98,6 +135,11 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
             Message userMsg = new Message("USER", q, Instant.now().getEpochSecond());
             messages.add(userMsg);
             if (autoSave) appendToNdjson(userMsg);
+            try {
+                DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
+            } catch (Exception e) {
+                System.out.println("Ошибка записи в БД: " + e.getMessage());
+            }
             addToIndex(userMsg, messages.size() - 1);
 
             String answer = "";
@@ -119,6 +161,11 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                 Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
                 messages.add(assistantMsg);
                 if (autoSave) appendToNdjson(assistantMsg);
+                try {
+                    DatabaseManager.saveMessageToDb(assistantMsg.role, assistantMsg.content, assistantMsg.ts);
+                } catch (Exception e) {
+                    System.out.println("Ошибка записи в БД: " + e.getMessage());
+                }
                 addToIndex(assistantMsg, messages.size() - 1);
             }
             if (autoSave && embedAutoThreshold > 0) {
@@ -151,6 +198,7 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                 if (memoryNewCount >= memoryAutoThreshold) {
                     System.out.println("[Авто-память] Сжимаю...");
                     if (messages.size() >= 2) {
+                        Thread thread = new Thread(() -> {
                         int count = Math.min(10, messages.size());
                         List<Message> recent = messages.subList(messages.size() - count, messages.size());
                         StringBuilder history = new StringBuilder();
@@ -168,7 +216,11 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                                 MemoryManager.addCompressed(compressed, vec);
                                 System.out.println("Сжатый фрагмент сохранён.");
                             }
+
                         } catch (Exception e) { System.out.println("Ошибка сжатия: " + e.getMessage()); }
+                    });
+                        thread.setDaemon(true);
+                        thread.start();
                     }
                     memoryNewCount = 0;
                 }
@@ -204,6 +256,18 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
             Process p = pb.start();
             p.waitFor();
         }
+    }
+    public static List<Message> loadMessagesFromDb() throws SQLException {
+        List<Message> list = new ArrayList<>();
+        String sql = "SELECT role, content, ts FROM messages ORDER BY id";
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:neuralfloppy.db");
+             Statement stmt = c.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                list.add(new Message(rs.getString("role"), rs.getString("content"), rs.getLong("ts")));
+            }
+        }
+        return list;
     }
     static void ensureDirectoriesAndFiles() throws IOException {
         // Создаём все нужные папки
@@ -593,6 +657,11 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                 Message userMsg = new Message("USER", query, Instant.now().getEpochSecond());
                 messages.add(userMsg);
                 if (autoSave) appendToNdjson(userMsg);
+                try {
+                    DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
+                } catch (Exception e) {
+                    System.out.println("Ошибка записи в БД: " + e.getMessage());
+                }
                 addToIndex(userMsg, messages.size() - 1);
 
                 switch (currentMode) {
@@ -605,6 +674,11 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                 Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
                 messages.add(assistantMsg);
                 if (autoSave) appendToNdjson(assistantMsg);
+                try {
+                    DatabaseManager.saveMessageToDb(assistantMsg.role, assistantMsg.content, assistantMsg.ts);
+                } catch (Exception e) {
+                    System.out.println("Ошибка записи в БД: " + e.getMessage());
+                }
                 addToIndex(assistantMsg, messages.size() - 1);
             } catch (Exception e) {
                 answer = "Ошибка: " + e.getMessage();
@@ -762,7 +836,11 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                     :silent on|off          - только запись 
                     :compress on|off        - авто-сжатие
                     :context dynamic|static -заморозить контекст
-            """);
+                    :test                   - тестирование всех систем
+                    :clear                  - очистить консоль
+                    :clear session          - сбрасывание активного контекста 
+                   
+            """); // :NeuralFloppy           -узнать новости проекта
                 } else {
                     System.out.println("""
             ===== БАЗОВЫЕ КОМАНДЫ =====
@@ -797,6 +875,72 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                     }
                     default -> System.out.println("Неизвестный режим.");
                 }
+            }
+            case ":clear" -> {
+                if (parts.length > 1 && parts[1].equalsIgnoreCase("session")) {
+                    messages.clear();
+                    wordIndex.clear();
+                    System.out.println("Сессия сброшена. Память на диске не тронута.");
+                } else {
+                    // Очистка консоли (Windows / Unix)
+                    try {
+                        if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                            new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
+                        } else {
+                            System.out.print("\033[H\033[2J");
+                            System.out.flush();
+                        }
+                    } catch (Exception e) {
+                        System.out.println("Не удалось очистить экран: " + e.getMessage());
+                    }
+                }
+            }
+            case ":test" -> {
+                System.out.println("=== Диагностика NeuralFloppy ===");
+                // 1. Папки
+                boolean dirsOk = Files.isDirectory(Path.of("data")) &&
+                        Files.isDirectory(Path.of("archive")) &&
+                        Files.isDirectory(Path.of("personas")) &&
+                        Files.isDirectory(Path.of("themes")) &&
+                        Files.isDirectory(Path.of("presets"));
+                System.out.println("Папки: " + (dirsOk ? "OK" : "ОШИБКА"));
+
+                // 2. Ollama
+                boolean ollamaOk = false;
+                try {
+                    HttpClient client = HttpClient.newHttpClient();
+                    HttpRequest req = HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:11434/api/tags"))
+                            .timeout(Duration.ofSeconds(3))
+                            .GET()
+                            .build();
+                    HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+                    ollamaOk = resp.statusCode() == 200;
+                } catch (Exception e) {
+                    ollamaOk = false;
+                }
+                System.out.println("Ollama: " + (ollamaOk ? "OK" : "НЕДОСТУПНА"));
+
+                // 3. Эмбеддинг-модель
+                boolean embOk = !EmbeddingEngine.vectors.isEmpty() || Files.exists(Path.of("data/embeddings.json"));
+                System.out.println("Эмбеддинги: " + (embOk ? "OK (" + EmbeddingEngine.vectors.size() + " векторов)" : "НЕТ ДАННЫХ"));
+
+                // 4. Память
+                System.out.println("Активных сообщений: " + messages.size());
+                System.out.println("Размер chat.ndjson: " + Files.size(Path.of("chat.ndjson")) + " байт");
+
+                // 5. Веб-сервер
+                boolean webOk = false;
+                try {
+                    Socket socket = new Socket();
+                    socket.connect(new InetSocketAddress("localhost", 8080), 2000);
+                    webOk = true;
+                    socket.close();
+                } catch (Exception e) {
+                    webOk = false;
+                }
+                System.out.println("Веб-сервер (порт 8080): " + (webOk ? "OK" : "НЕ ЗАПУЩЕН"));
+                System.out.println("=== Диагностика завершена ===");
             }
 
             case ":game" -> {
@@ -1091,12 +1235,69 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
                 }
                 switch (parts[1]) {
                     case "build" -> {
-                        System.out.println("Строю эмбеддинги... Это может занять минуту.");
-                        try {
-                            EmbeddingEngine.build();
-                        } catch (Exception e) {
-                            System.out.println("Ошибка: " + e.getMessage());
+                        if (embedBuildInProgress) {
+                            System.out.println("Эмбеддинги уже строятся. Ожидайте.");
+                            return;
                         }
+                        embedBuildInProgress = true;
+                        Thread bg = new Thread(() -> {
+                            try {
+                                System.out.println("[EMBED] Строю эмбеддинги... Это может занять минуту.");
+                                EmbeddingEngine.build();
+                                System.out.println("[EMBED] Готово.");
+                            } catch (Exception e) {
+                                System.out.println("[EMBED] Ошибка: " + e.getMessage());
+                            } finally {
+                                embedBuildInProgress = false;
+                            }
+                        });
+                        bg.setDaemon(true);
+                        bg.start();
+                        System.out.println("Эмбеддинги строятся в фоне. Можно писать дальше.");
+                    }
+                    case "model" -> {
+                        if (parts.length < 3) {
+                            System.out.println("Укажи модель. Например: :embed model nomic-embed-text");
+                            return;
+                        }
+                        String newModel = parts[2];
+                        boolean hasModel = false;
+                        try {
+                            HttpClient client = HttpClient.newHttpClient();
+                            HttpRequest req = HttpRequest.newBuilder()
+                                    .uri(URI.create("http://localhost:11434/api/tags"))
+                                    .timeout(Duration.ofSeconds(5))
+                                    .GET()
+                                    .build();
+                            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+                            JsonObject json = GSON.fromJson(resp.body(), JsonObject.class);
+                            if (json.has("models")) {
+                                JsonArray models = json.getAsJsonArray("models");
+                                for (JsonElement m : models) {
+                                    String name = m.getAsJsonObject().get("name").getAsString();
+                                    if (name.startsWith(newModel)) { hasModel = true; break; }
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.out.println("Не удалось проверить модель: " + e.getMessage());
+                            return;
+                        }
+
+                        if (!hasModel) {
+                            System.out.println("Модель " + newModel + " не скачана. Скачиваю...");
+                            try {
+                                ProcessBuilder pb = new ProcessBuilder("ollama", "pull", newModel);
+                                pb.inheritIO();
+                                Process p = pb.start();
+                                p.waitFor();
+                            } catch (Exception e) {
+                                System.out.println("Ошибка скачивания: " + e.getMessage());
+                                return;
+                            }
+                        }
+
+                        EmbeddingEngine.EMBED_MODEL = newModel;
+                        System.out.println("Эмбеддинг-модель сменена на " + newModel + ". Перестрой индекс: :embed build");
                     }
                     case "on" -> {
                         embedEnabled = true;
@@ -1755,7 +1956,7 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
     static class EmbeddingEngine {
         static List<double[]> vectors = new ArrayList<>();
         static List<String> texts = new ArrayList<>();
-        static String EMBED_MODEL = "nomic-embed-16k"; // по умолчанию
+        static String EMBED_MODEL = "nomic-embed-text"; // по умолчанию
 
         // Метод для получения имени модели с учётом суффикса -16k
         static String getFullEmbedModelName(String baseModel) {
@@ -1852,28 +2053,20 @@ public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
             return dot / (Math.sqrt(normA) * Math.sqrt(normB));
         }
 
-        static void save() throws IOException {
-            Files.writeString(EMBED_FILE, GSON.toJson(Map.of(
-                    "vectors", vectors,
-                    "texts", texts
-            )));
+        static void save() throws Exception {
+            DatabaseManager.clearEmbeddings();
+            for (int i = 0; i < texts.size(); i++) {
+                DatabaseManager.saveEmbedding(texts.get(i), vectors.get(i));
+            }
         }
 
-        static void load() throws IOException {
-            if (!Files.exists(EMBED_FILE)) return;
-            JsonObject json = GSON.fromJson(Files.readString(EMBED_FILE), JsonObject.class);
+        static void load() throws Exception {
             vectors.clear();
             texts.clear();
-            JsonArray vArr = json.getAsJsonArray("vectors");
-            JsonArray tArr = json.getAsJsonArray("texts");
-            for (int i = 0; i < vArr.size(); i++) {
-                double[] vec = new double[getEmbeddingDimension()];
-                JsonArray vecArr = vArr.get(i).getAsJsonArray();
-                for (int j = 0; j < getEmbeddingDimension(); j++) {
-                    vec[j] = vecArr.get(j).getAsDouble();
-                }
-                vectors.add(vec);
-                texts.add(tArr.get(i).getAsString());
+            List<DatabaseManager.EmbeddingEntry> entries = DatabaseManager.loadEmbeddings();
+            for (DatabaseManager.EmbeddingEntry entry : entries) {
+                vectors.add(entry.vec);
+                texts.add(entry.content);
             }
         }
     }

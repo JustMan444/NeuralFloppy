@@ -23,6 +23,12 @@ public class GameAPI {
 
     private static final Gson GSON = new Gson();
 
+    private static NeuralFloppyCore core;
+
+    public static void setCore(NeuralFloppyCore c) {
+        core = c;
+    }
+
     // -------------------------- ОБРАБОТЧИКИ --------------------------
 
     public static class GameHandler implements HttpHandler {
@@ -43,7 +49,7 @@ public class GameAPI {
 
     private static void handleRequest(HttpExchange exchange, boolean fullControl) throws IOException {
         // 1. Проверка активации
-        if (!NeuralFloppyTool1_9_2.isGameModeEnabled()) {
+        if (!core.isGameModeEnabled()) {
             sendError(exchange, 403, "Game API is not active. Use :mode programmers to enable.");
             return;
         }
@@ -59,7 +65,7 @@ public class GameAPI {
         }
 
         // 3. Извлечение полей
-        String column = requestJson.has("column") ? requestJson.get("column").getAsString() : NeuralFloppyTool1_9_2.getDefaultColumn();
+        String column = requestJson.has("column") ? requestJson.get("column").getAsString() : core.getDefaultColumn();
         String format = requestJson.has("format") ? requestJson.get("format").getAsString() : null;
 
         // 4. Валидация
@@ -109,7 +115,7 @@ public class GameAPI {
                         response = SuperFastEngine.query(column, requestJson);
                         break;
                     case "chat":
-                        String llmAnswer = NeuralFloppyTool1_9_2.askLLM(requestJson.get("query").getAsString(), requestJson);
+                        String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson);
                         response.addProperty("message", llmAnswer);
                         break;
                     default:
@@ -120,17 +126,17 @@ public class GameAPI {
                 // Классический режим с LLM (твоя старая добрая логика)
                 switch (format) {
                     case "observer":
-                        NeuralFloppyTool1_9_2.saveToColumn(column, requestJson.toString(), "observer");
+                        core.saveToColumn(column, requestJson.toString(), "observer");
                         response.addProperty("status", "recorded");
                         break;
                     case "looker":
-                        String llmAnalysis = NeuralFloppyTool1_9_2.analyzeWithLLM(requestJson.get("query").getAsString(), requestJson);
-                        NeuralFloppyTool1_9_2.saveToColumn(column, llmAnalysis, "looker");
+                        String llmAnalysis = core.analyzeWithLLM(requestJson.get("query").getAsString(), requestJson);
+                        core.saveToColumn(column, llmAnalysis, "looker");
                         response.addProperty("status", "recorded");
                         break;
                     default:
-                        String llmAnswer = NeuralFloppyTool1_9_2.askLLM(requestJson.get("query").getAsString(), requestJson);
-                        NeuralFloppyTool1_9_2.saveToColumn(column, llmAnswer, format);
+                        String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson);
+                        core.saveToColumn(column, llmAnswer, format);
                         response.addProperty("message", llmAnswer);
                         break;
                 }
