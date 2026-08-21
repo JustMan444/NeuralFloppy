@@ -7,12 +7,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-public class NeuralFloppyAPI_CLI {
-    private static final String API_KEY = "ТВОЙ_OPENROUTER_КЛЮЧ"; // <-- ВСТАВЬ СЮДА
-    private static final String API_URL = "https://openrouter.ai/api/v1/chat/completions";
-    private static final String MODEL = "openrouter/free"; // Или deepseek/deepseek-r1:free
+public class NeuralFloppyLocal_CLI {
+    private static final String OLLAMA_URL = "http://localhost:11434/v1/chat/completions";
+    private static final String MODEL = "llama3.1:8b"; // Или deepseek-r1:14b
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "data/chat.ndjson";
     private static final Gson GSON = new Gson();
@@ -22,7 +22,7 @@ public class NeuralFloppyAPI_CLI {
 
     public static void main(String[] args) throws Exception {
         buildIndex();
-        System.out.println("NeuralFloppy API готов. " + messages.size() + " сообщений в памяти.");
+        System.out.println("NeuralFloppy Local готов. " + messages.size() + " сообщений в памяти.");
         System.out.println("Модель: " + MODEL);
         System.out.println("Вводи вопрос (или :выход)\n");
 
@@ -33,17 +33,14 @@ public class NeuralFloppyAPI_CLI {
             if (q == null || q.isBlank()) continue;
             if (q.equals(":выход")) break;
 
-            // Сохраняем вопрос
             Message userMsg = new Message("USER", q, Instant.now().getEpochSecond());
             messages.add(userMsg);
             appendToNdjson(userMsg);
             addToIndex(userMsg, messages.size() - 1);
 
-            // Получаем ответ от API
             String answer = askTeacher(q);
             System.out.println("\nУчитель: " + answer);
 
-            // Сохраняем ответ
             Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
             messages.add(assistantMsg);
             appendToNdjson(assistantMsg);
@@ -67,16 +64,14 @@ public class NeuralFloppyAPI_CLI {
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(API_URL))
-                .header("Authorization", "Bearer " + API_KEY)
-                .header("HTTP-Referer", "http://localhost")
-                .header("X-Title", "NeuralFloppy")
+                .uri(URI.create(OLLAMA_URL))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
                         "model", MODEL,
                         "messages", List.of(Map.of("role", "user", "content", prompt)),
                         "temperature", 0.7,
-                        "max_tokens", 8192
+                        "max_tokens", 8192,
+                        "num_ctx", 32768
                 ))))
                 .build();
 
@@ -87,10 +82,12 @@ public class NeuralFloppyAPI_CLI {
             return json.getAsJsonArray("choices").get(0).getAsJsonObject()
                     .getAsJsonObject("message").get("content").getAsString();
         }
-        return "Ошибка API: " + body;
+        return "Ошибка Ollama: " + body;
     }
 
-// --- Вспомогательные методы (индекс, сохранение, поиск) ---
+    // --- Те же вспомогательные методы ---
+    // ... (скопируй их из NeuralFloppyCLI, они идентичны)
+    // ================== ИНДЕКС, ПОИСК, СОХРАНЕНИЕ ==================
 
     static void buildIndex() throws IOException {
         messages.clear();
@@ -161,8 +158,13 @@ public class NeuralFloppyAPI_CLI {
     }
 
     static class Message {
-        String role, content;
+        String role;
+        String content;
         long ts;
-        Message(String r, String c, long t) { role = r; content = c; ts = t; }
+        Message(String r, String c, long t) {
+            role = r;
+            content = c;
+            ts = t;
+        }
     }
 }

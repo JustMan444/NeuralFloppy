@@ -1,2 +1,4 @@
 {"role":"USER","content":"hi","ts":1787336447}
 {"role":"USER","content":"hi","ts":1787336671}
+{"role":"USER","content":"hi","ts":1787336866}
+{"role":"ASSISTANT","content":"Ошибка Ollama: {\"error\":{\"message\":\"model \u0027llama3.1:8b\u0027 not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n","ts":1787336866}
