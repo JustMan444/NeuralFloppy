@@ -1,3 +1,5 @@
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.*;
@@ -13,11 +15,11 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
 
-public class NeuralFloppyTool1_4 {
+public class NeuralFloppyTool1_5 {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
-    private static final String API_KEY = "sk-or-v1-...."; // твой ключ
+    private static final String API_KEY = "sk-or-v1-..."; // твой ключ
     private static double temperature = 0.7;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
@@ -33,11 +35,20 @@ public class NeuralFloppyTool1_4 {
     private static boolean autoSave = true;
     private static boolean streaming = true;
 
+    // Эмбеддинги
+    private static boolean embedEnabled = false;
+    private static int embedAutoThreshold = 0; // 0 = выключено
+    private static int embedNewCount = 0;
+
     public static void main(String[] args) throws Exception {
         currentPersona = Files.readString(Path.of(PERSONA_FILE));
         buildIndex();
+        if (Files.exists(Path.of("data/embeddings.json"))) {
+            EmbeddingEngine.load();
+            System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
+        }
 
-        System.out.println("NeuralFloppy TOOL v1.4 готов. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL V1.5!/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -81,6 +92,15 @@ public class NeuralFloppyTool1_4 {
                 messages.add(assistantMsg);
                 if (autoSave) appendToNdjson(assistantMsg);
                 addToIndex(assistantMsg, messages.size() - 1);
+            }
+            // Проверяем авто-перестроение
+            if (autoSave && embedAutoThreshold > 0) {
+                embedNewCount++;
+                if (embedNewCount >= embedAutoThreshold) {
+                    System.out.println("[Авто-embed] Перестраиваю эмбеддинги...");
+                    EmbeddingEngine.build();
+                    embedNewCount = 0;
+                }
             }
             System.out.println();
         }
@@ -312,6 +332,10 @@ public class NeuralFloppyTool1_4 {
                 :save                  - сохранить сессию в архив
                 :exit                  - выход
                 :web                   - открытие чата в браузере
+                :embed build           - построить эмбеддинги для всей базы
+                :embed on|off          - вкл/выкл семантический поиск
+                :embed auto <N>        - авто-перестроение каждые N сообщений
+                :embed status          - состояние движка
                 """);
             case ":mode" -> {
                 if (parts.length < 2) { System.out.println("Укажи режим: api, local, manual"); return; }
@@ -335,6 +359,45 @@ public class NeuralFloppyTool1_4 {
                     System.out.println("Temperature установлена на " + temperature);
                 } catch (NumberFormatException e) {
                     System.out.println("Некорректное значение. Укажи число от 0.0 до 2.0");
+                }
+            }
+            case ":embed" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :embed build|on|off|auto <N>|status");
+                    return;
+                }
+                switch (parts[1]) {
+                    case "build" -> {
+                        System.out.println("Строю эмбеддинги... Это может занять минуту.");
+                        try {
+                            EmbeddingEngine.build();
+                        } catch (Exception e) {
+                            System.out.println("Ошибка: " + e.getMessage());
+                        }
+                    }
+                    case "on" -> {
+                        embedEnabled = true;
+                        System.out.println("Эмбеддинги включены.");
+                    }
+                    case "off" -> {
+                        embedEnabled = false;
+                        System.out.println("Эмбеддинги выключены.");
+                    }
+                    case "auto" -> {
+                        if (parts.length < 3) {
+                            System.out.println("Укажи число сообщений. Например: :embed auto 10");
+                            return;
+                        }
+                        embedAutoThreshold = Integer.parseInt(parts[2]);
+                        embedNewCount = 0;
+                        System.out.println("Авто-перестроение каждые " + embedAutoThreshold + " новых сообщений.");
+                    }
+                    case "status" -> {
+                        System.out.println("Эмбеддинги: " + (embedEnabled ? "вкл" : "выкл"));
+                        System.out.println("Векторов в памяти: " + EmbeddingEngine.vectors.size());
+                        System.out.println("Авто-перестроение: " + (embedAutoThreshold > 0 ? "каждые " + embedAutoThreshold + " сообщ." : "выкл"));
+                    }
+                    default -> System.out.println("Неизвестная подкоманда :embed");
                 }
             }
 
@@ -507,7 +570,7 @@ public class NeuralFloppyTool1_4 {
                 </style>
             </head>
             <body>
-                <h1>NeuralFloppy v1.4 Web Console</h1>
+                <h1>NeuralFloppy v1.5 Web Console</h1>
                 <div id="chat"></div>
                 <div class="panel">
                     <label>Режим:</label>
@@ -608,6 +671,14 @@ public class NeuralFloppyTool1_4 {
     }
 
     static List<String> searchContext(String query, int topN) {
+        if (embedEnabled && !EmbeddingEngine.vectors.isEmpty()) {
+            try {
+                return EmbeddingEngine.search(query, topN);
+            } catch (Exception e) {
+                System.out.println("[Embed] Ошибка поиска: " + e.getMessage());
+            }
+        }
+        // Fallback на старый wordIndex
         Set<String> queryTokens = tokenize(query);
         Map<Integer, Integer> scores = new HashMap<>();
         for (String token : queryTokens) {
@@ -633,7 +704,7 @@ public class NeuralFloppyTool1_4 {
 
             Вот история твоего общения с учеником:
             %s
-a
+
             Ученик спросил: %s
             Ответь как тот самый наставник:""", currentPersona, context, question);
     }
@@ -650,6 +721,112 @@ a
         return Arrays.stream(text.toLowerCase().split("[^а-яa-z0-9]+"))
                 .filter(w -> w.length() > 1)
                 .collect(Collectors.toSet());
+    }
+    static class EmbeddingEngine {
+        static List<double[]> vectors = new ArrayList<>();
+        static List<String> texts = new ArrayList<>();
+        static final String EMBED_MODEL = "nomic-embed-text";
+        static final Path EMBED_FILE = Path.of("data/embeddings.json");
+
+        static void build() throws Exception {
+            vectors.clear();
+            texts.clear();
+            HttpClient client = HttpClient.newHttpClient();
+            int skipped = 0;
+            for (Message msg : messages) {
+                if (msg.content.isBlank()) continue;
+                // Обрезаем длинные сообщения (модель не любит больше ~2000 символов)
+                String text = msg.content.length() > 2000 ? msg.content.substring(0, 2000) : msg.content;
+                try {
+                    double[] vec = getEmbedding(client, text);
+                    vectors.add(vec);
+                    texts.add(text);
+                } catch (Exception e) {
+                    skipped++;
+                    // Просто пропускаем проблемные сообщения
+                }
+            }
+            save();
+            System.out.println("Построено " + vectors.size() + " эмбеддингов. Пропущено: " + skipped);
+        }
+
+        static double[] getEmbedding(HttpClient client, String text) throws Exception {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://localhost:11434/api/embeddings"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
+                            "model", EMBED_MODEL,
+                            "prompt", text
+                    )), StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
+            String body = resp.body();
+            JsonObject json = GSON.fromJson(body, JsonObject.class);
+
+            // Проверяем, нет ли ошибки
+            if (json.has("error")) {
+                throw new RuntimeException("Embedding error: " + json.get("error").toString());
+            }
+
+            double[] vec = new double[768];
+            int i = 0;
+            for (JsonElement e : json.getAsJsonArray("embedding")) {
+                vec[i++] = e.getAsDouble();
+            }
+            return vec;
+        }
+
+        static List<String> search(String query, int topN) throws Exception {
+            if (vectors.isEmpty()) return List.of();
+            HttpClient client = HttpClient.newHttpClient();
+            double[] queryVec = getEmbedding(client, query);
+            record Pair(int idx, double sim) {}
+            List<Pair> scores = new ArrayList<>();
+            for (int i = 0; i < vectors.size(); i++) {
+                double sim = cosineSimilarity(queryVec, vectors.get(i));
+                scores.add(new Pair(i, sim));
+            }
+            scores.sort((a, b) -> Double.compare(b.sim, a.sim));
+            return scores.stream()
+                    .limit(topN)
+                    .map(p -> texts.get(p.idx))
+                    .collect(Collectors.toList());
+        }
+
+        static double cosineSimilarity(double[] a, double[] b) {
+            double dot = 0, normA = 0, normB = 0;
+            for (int i = 0; i < a.length; i++) {
+                dot += a[i] * b[i];
+                normA += a[i] * a[i];
+                normB += b[i] * b[i];
+            }
+            return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        }
+
+        static void save() throws IOException {
+            Files.writeString(EMBED_FILE, GSON.toJson(Map.of(
+                    "vectors", vectors,
+                    "texts", texts
+            )));
+        }
+
+        static void load() throws IOException {
+            if (!Files.exists(EMBED_FILE)) return;
+            JsonObject json = GSON.fromJson(Files.readString(EMBED_FILE), JsonObject.class);
+            vectors.clear();
+            texts.clear();
+            JsonArray vArr = json.getAsJsonArray("vectors");
+            JsonArray tArr = json.getAsJsonArray("texts");
+            for (int i = 0; i < vArr.size(); i++) {
+                double[] vec = new double[768];
+                JsonArray vecArr = vArr.get(i).getAsJsonArray();
+                for (int j = 0; j < 768; j++) {
+                    vec[j] = vecArr.get(j).getAsDouble();
+                }
+                vectors.add(vec);
+                texts.add(tArr.get(i).getAsString());
+            }
+        }
     }
 
     static class Message {
