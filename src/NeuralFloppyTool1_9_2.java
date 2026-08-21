@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.*;
@@ -16,11 +17,11 @@ import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
 import java.net.URLEncoder;
 
-public class NeuralFloppyTool1_9_1 {
+public class NeuralFloppyTool1_9_2 implements NeuralFloppyCore {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
-    private static final String API_KEY = "sk-or-v1-........"; // твой ключ
+    private static final String API_KEY = "sk-or-v1-....."; // API ключ
     private static double temperature = 0.7;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
@@ -35,6 +36,13 @@ public class NeuralFloppyTool1_9_1 {
     private static String currentModel = "openrouter/free";
     private static boolean autoSave = true;
     private static boolean streaming = true;
+    // Режимы NeuralFloppy 1.9.2
+    private static boolean gameModeEnabled = false;    // Активация игрового API
+    private static String defaultColumn = null;        // Колонка памяти по умолчанию
+    private static boolean silentMode = false;         // Режим без генерации ответа
+    private static boolean compressEnabled = true;     // Автосжатие в долгую память
+    private static boolean dynamicContext = true;      // Динамический контекст
+
     private static int contextSize = 10; // по умолчанию
     private static boolean thinkingEnabled = false;
     private static boolean webSearchEnabled = false;
@@ -53,16 +61,20 @@ public class NeuralFloppyTool1_9_1 {
     private static int memoryNewCount = 0;
 
     public static void main(String[] args) throws Exception {
-        // Запускаем Ollama, если спит
+        ensureDirectoriesAndFiles();
+        ensureOllamaInstalled();
         ensureOllamaRunning();
         currentPersona = Files.readString(Path.of(PERSONA_FILE));
         buildIndex();
+        ensureEmbeddingModel();
         if (Files.exists(Path.of("data/embeddings.json"))) {
             EmbeddingEngine.load();
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
+        NeuralFloppyTool1_9_2 app = new NeuralFloppyTool1_9_2();
+        GameAPI.setCore(app);
 
-        System.out.println("NeuralFloppy TOOL V1.9.1/*. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL V1.9.2/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -72,7 +84,7 @@ public class NeuralFloppyTool1_9_1 {
             String q = reader.readLine();
             if (q == null || q.isBlank()) continue;
             if (!isValidInput(q)) {
-                System.out.println("ИИ: Бро, кодировка сломалась. Повтори вопрос.");
+                System.out.println("ИИ:Кодировка сломана");
                 continue;
             }
 
@@ -87,7 +99,7 @@ public class NeuralFloppyTool1_9_1 {
             addToIndex(userMsg, messages.size() - 1);
 
             String answer = "";
-            System.out.print("\nУчитель: ");
+            System.out.print("\nИИ: ");
             switch (currentMode) {
                 case API -> answer = streaming ? askAPIStreaming(q) : askAPI(q);
                 case LOCAL -> answer = streaming ? askLocalStreaming(q) : askLocal(q);
@@ -107,7 +119,6 @@ public class NeuralFloppyTool1_9_1 {
                 if (autoSave) appendToNdjson(assistantMsg);
                 addToIndex(assistantMsg, messages.size() - 1);
             }
-            // Проверяем авто-перестроение
             if (autoSave && embedAutoThreshold > 0) {
                 embedNewCount++;
                 if (embedNewCount >= embedAutoThreshold) {
@@ -116,6 +127,7 @@ public class NeuralFloppyTool1_9_1 {
                     embedNewCount = 0;
                 }
             }
+            // Проверяем авто-обновление персоны
             if (personaAutoThreshold > 0) {
                 personaNewCount++;
                 if (personaNewCount >= personaAutoThreshold) {
@@ -131,6 +143,7 @@ public class NeuralFloppyTool1_9_1 {
                     personaNewCount = 0;
                 }
             }
+            // Авто-сжатие в долгую память
             if (memoryAutoThreshold > 0) {
                 memoryNewCount++;
                 if (memoryNewCount >= memoryAutoThreshold) {
@@ -161,6 +174,59 @@ public class NeuralFloppyTool1_9_1 {
             System.out.println();
         }
     }
+    static void ensureEmbeddingModel() throws IOException, InterruptedException {
+        String model = EmbeddingEngine.EMBED_MODEL;
+        // Проверяем, есть ли модель в Ollama
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:11434/api/tags"))
+                .GET()
+                .build();
+        HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
+        JsonObject json = GSON.fromJson(resp.body(), JsonObject.class);
+        boolean hasModel = false;
+        if (json.has("models")) {
+            JsonArray models = json.getAsJsonArray("models");
+            for (JsonElement m : models) {
+                String name = m.getAsJsonObject().get("name").getAsString();
+                if (name.startsWith(model)) {
+                    hasModel = true;
+                    break;
+                }
+            }
+        }
+        if (!hasModel) {
+            System.out.println("[OLLAMA] Модель " + model + " не найдена. Скачиваю...");
+            ProcessBuilder pb = new ProcessBuilder("ollama", "pull", model);
+            pb.inheritIO();
+            Process p = pb.start();
+            p.waitFor();
+        }
+    }
+    static void ensureDirectoriesAndFiles() throws IOException {
+        // Создаём все нужные папки
+        Files.createDirectories(Path.of("data"));
+        Files.createDirectories(Path.of("archive"));
+        Files.createDirectories(Path.of("personas"));
+        Files.createDirectories(Path.of("themes"));
+        Files.createDirectories(Path.of("presets"));
+        Files.createDirectories(Path.of("out"));
+
+        // Создаём пустой chat.ndjson, если его нет
+        Path ndjsonPath = Path.of("chat.ndjson");
+        if (!Files.exists(ndjsonPath)) {
+            Files.createFile(ndjsonPath);
+        }
+
+        // Создаём пустой persona.txt, если его нет
+        Path personaPath = Path.of("persona.txt");
+        if (!Files.exists(personaPath)) {
+            Files.writeString(personaPath, "[СИСТЕМА]\nТы — ИИ-наставник внутри NeuralFloppy.\n");
+        }
+
+        // Создаём пустые файлы тем и пресетов, если их нет (можно заменить на создание пустых JSON)
+        // Пресеты уже создаются через команды, но на всякий случай создадим папку
+    }
 
     // ================== API ==================
     static String askAPI(String question) throws Exception {
@@ -176,9 +242,8 @@ public class NeuralFloppyTool1_9_1 {
             Ученик спросил: %s
             Ответь как тот самый наставник:""", persona, context, question);
 
-        // Автоматический поиск в интернете (если включён)
         if (webSearchEnabled) {
-            // Проверяем, есть ли в контексте достаточно информации
+
             if (ctx.isEmpty() || ctx.size() < 3) {
                 System.out.println("[Авто-поиск] Ищу в интернете: " + question);
                 try {
@@ -190,9 +255,8 @@ public class NeuralFloppyTool1_9_1 {
             }
         }
 
-// Автоматические размышления (если включены)
+
         if (thinkingEnabled) {
-            // Добавляем инструкцию для модели думать пошагово в будущем добавим отдельный запрос бяк :D
             prompt = "Думай шаг за шагом и рассуждай вслух перед ответом.\n" + prompt;
         }
 
@@ -218,7 +282,7 @@ public class NeuralFloppyTool1_9_1 {
         if (body.contains("exceed_context_size") && contextSize > 50) {
             contextSize -= 50;
             System.out.println("[UAZ] Уменьшаю контекст до " + contextSize);
-            return askAPI(question); // :D
+            return askAPI(question);
         }
         if (json.has("choices") && json.getAsJsonArray("choices").size() > 0) {
             JsonObject message = json.getAsJsonArray("choices").get(0)
@@ -227,7 +291,6 @@ public class NeuralFloppyTool1_9_1 {
             if (content != null && !content.isJsonNull()) {
                 return content.getAsString();
             } else {
-                // :(
                 return "Модель не ответила. Возможно, сработал фильтр безопасности. Попробуй другую модель.";
             }
         }
@@ -275,12 +338,10 @@ public class NeuralFloppyTool1_9_1 {
                     JsonObject json = GSON.fromJson(jsonStr, JsonObject.class);
                     if (json.has("choices") && json.getAsJsonArray("choices").size() > 0) {
                         JsonObject delta = json.getAsJsonArray("choices").get(0).getAsJsonObject();
-                        // Выводим reasoning, если есть
                         if (delta.has("delta") && delta.getAsJsonObject("delta").has("reasoning")) {
                             String reasoning = delta.getAsJsonObject("delta").get("reasoning").getAsString();
                             System.out.print("[Мысль]: " + reasoning);
                         }
-                        // Выводим content
                         if (delta.has("delta") && delta.getAsJsonObject("delta").has("content")) {
                             String chunk = delta.getAsJsonObject("delta").get("content").getAsString();
                             System.out.print(chunk);
@@ -292,6 +353,26 @@ public class NeuralFloppyTool1_9_1 {
         }
         System.out.println();
         return fullAnswer.toString();
+    }
+    static boolean ensureOllamaInstalled() {
+        // Проверяем, есть ли ollama в PATH
+        try {
+            ProcessBuilder pb = new ProcessBuilder("ollama", "--version");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println("[OLLAMA] " + line);
+                return true;
+            }
+        } catch (IOException e) {
+            System.out.println("[OLLAMA] Ollama не найдена в PATH!");
+            System.out.println("[OLLAMA] Пожалуйста, установите её с https://ollama.com/download");
+            System.out.println("[OLLAMA] После установки перезапустите NeuralFloppy.");
+            return false;
+        }
+        return false;
     }
 
     static String askAPIStreaming(String question) throws Exception {
@@ -387,7 +468,7 @@ public class NeuralFloppyTool1_9_1 {
         if (body.contains("exceed_context_size") && contextSize > 50) {
             contextSize -= 50;
             System.out.println("[UAZ] Уменьшаю контекст до " + contextSize);
-            return askLocal(question); // рекурсивно пробуем снова
+            return askLocal(question);
         }
         if (json.has("response")) {
             JsonElement resp = json.get("response");
@@ -399,7 +480,7 @@ public class NeuralFloppyTool1_9_1 {
         }
         return "Ошибка Ollama: " + body;
     }
-    static void askAPIStreamingToWeb(String question, OutputStream os) throws Exception {
+    static String askAPIStreamingToWeb(String question, OutputStream os) throws Exception {
         String persona = currentPersona;
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
@@ -431,6 +512,7 @@ public class NeuralFloppyTool1_9_1 {
         HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
         BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
         String line;
+        StringBuilder fullAnswer = new StringBuilder();
         while ((line = in.readLine()) != null) {
             if (line.startsWith("data: ")) {
                 String jsonStr = line.substring(6).trim();
@@ -453,9 +535,10 @@ public class NeuralFloppyTool1_9_1 {
                 } catch (Exception e) {}
             }
         }
+        return fullAnswer.toString();
     }
 
-    static void askLocalStreamingToWeb(String question, OutputStream os) throws Exception {
+    static String askLocalStreamingToWeb(String question, OutputStream os) throws Exception {
         ensureOllamaRunning();
         String persona = currentPersona;
         List<String> ctx = searchContext(question, contextSize);
@@ -484,6 +567,7 @@ public class NeuralFloppyTool1_9_1 {
         HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
         BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
         String line;
+        StringBuilder fullAnswer = new StringBuilder();
         while ((line = in.readLine()) != null) {
             try {
                 JsonObject json = GSON.fromJson(line, JsonObject.class);
@@ -495,6 +579,7 @@ public class NeuralFloppyTool1_9_1 {
                 if (json.has("done") && json.get("done").getAsBoolean()) break;
             } catch (Exception e) {}
         }
+        return fullAnswer.toString();
     }
     static class AskHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
@@ -502,18 +587,23 @@ public class NeuralFloppyTool1_9_1 {
             query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
             String answer = "";
             try {
-                // :) :D :|
+                // Сохраняем вопрос пользователя
+                Message userMsg = new Message("USER", query, Instant.now().getEpochSecond());
+                messages.add(userMsg);
+                if (autoSave) appendToNdjson(userMsg);
+                addToIndex(userMsg, messages.size() - 1);
+
                 switch (currentMode) {
-                    case API:
-                        answer = askAPI(query);
-                        break;
-                    case LOCAL:
-                        answer = askLocal(query);
-                        break;
-                    case MANUAL:
-                        answer = "Ручной режим недоступен в веб-интерфейсе. Переключись на :mode api или :mode local.";
-                        break;
+                    case API -> answer = askAPI(query);
+                    case LOCAL -> answer = askLocal(query);
+                    case MANUAL -> answer = "Ручной режим недоступен в веб-интерфейсе.";
                 }
+
+                // Сохраняем ответ
+                Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
+                messages.add(assistantMsg);
+                if (autoSave) appendToNdjson(assistantMsg);
+                addToIndex(assistantMsg, messages.size() - 1);
             } catch (Exception e) {
                 answer = "Ошибка: " + e.getMessage();
             }
@@ -574,21 +664,37 @@ public class NeuralFloppyTool1_9_1 {
         public void handle(HttpExchange exchange) throws IOException {
             String query = exchange.getRequestURI().getQuery();
             String q = java.net.URLDecoder.decode(query.split("=")[1], StandardCharsets.UTF_8);
+
+            // Сохраняем вопрос пользователя
+            Message userMsg = new Message("USER", q, Instant.now().getEpochSecond());
+            messages.add(userMsg);
+            if (autoSave) appendToNdjson(userMsg);
+            addToIndex(userMsg, messages.size() - 1);
+
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");
             exchange.getResponseHeaders().set("Connection", "keep-alive");
             exchange.sendResponseHeaders(200, 0);
 
             OutputStream os = exchange.getResponseBody();
+            String answer = "";
             try {
-                // 67
                 if (currentMode == Mode.API) {
-                    askAPIStreamingToWeb(q, os);
+                    answer = askAPIStreamingToWeb(q, os);
                 } else if (currentMode == Mode.LOCAL) {
-                    askLocalStreamingToWeb(q, os);
+                    answer = askLocalStreamingToWeb(q, os);
                 } else {
                     os.write("data: Ручной режим не поддерживает стриминг.\n\n".getBytes(StandardCharsets.UTF_8));
                 }
+
+                // Сохраняем ответ (полный текст, собранный из стрима)
+                if (!answer.isBlank()) {
+                    Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
+                    messages.add(assistantMsg);
+                    if (autoSave) appendToNdjson(assistantMsg);
+                    addToIndex(assistantMsg, messages.size() - 1);
+                }
+
                 // Сигнал завершения
                 os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
             } catch (Exception e) {
@@ -603,58 +709,182 @@ public class NeuralFloppyTool1_9_1 {
     static void handleCommand(String cmd) throws IOException {
         String[] parts = cmd.split("\\s+");
         switch (parts[0]) {
-            case ":help" -> System.out.println("""
-            Команды:
-            :mode api|local|manual  - переключить режим
-            :model <имя>            - сменить модель
-            :think on|off           - включить/выключить режим размышлений
-            :websearch on|off       - включить/выключить авто-поиск в интернете
-            :persona                - показать текущую персону
-            :persona save <имя>     - сохранить персону в профиль
-            :persona load <имя>     - загрузить персону из профиля
-            :persona new <имя>      - создать новый профиль
-            :autosave on|off        - вкл/выкл автосохранение
-            :stream on|off          - вкл/выкл потоковый вывод
-            :status                 - показать состояние Tool
-            :models                 - список локальных моделей
-            :save                   - сохранить сессию в архив
-            :exit                   - выход
-            :web                    - открыть чат в браузере
-            :embed build            - построить эмбеддинги
-            :embed on|off           - вкл/выкл семантический поиск
-            :embed auto <N>         - авто-перестроение каждые N сообщений
-            :embed status           - состояние движка
-            :persona auto           - обновить персону через ИИ
-            :persona auto <N>       - авто-обновление каждые N сообщений
-            :persona auto off       - отключить авто-обновление
-            :remember               - сжать последние 10 сообщений
-            :memory migrate         - миграция JSON в SQLite
-            :memory status          - состояние долгой памяти
-            :memory search <текст>  - текстовый поиск по памяти
-            :memory auto <N>        - авто-сжатие каждые N сообщений
-            :memory purge <дни>     - удалить старые записи
-            :summarize              - сводка последних 20 сообщений
-            :import <файл>          - импорт JSON-диалогов
-            :think on|off           - размышление
-            :websearch on|off       - поиск в интернете
-            :theme <имя> <уровень>  - применить тему (1=CSS, 2=CSS+HTML, 3=CSS+HTML+JS)
-            :theme off              - сбросить тему
-            :preset                 - пресеты!
-            :themes                 - показать список доступных тем
-            :presets                - показать список доступных пресетов
+            case ":help" -> {
+                if (parts.length > 1 && parts[1].equalsIgnoreCase("all")) {
+                    System.out.println("""
+                    :mode api|local|manual|programmers  - переключить режим
+                    :model <имя>            - сменить модель
+                    :think on|off           - включить/выключить режим размышлений
+                    :websearch on|off       - включить/выключить авто-поиск в интернете
+                    :persona                - показать текущую персону
+                    :persona save <имя>     - сохранить персону в профиль
+                    :persona load <имя>     - загрузить персону из профиля
+                    :persona new <имя>      - создать новый профиль
+                    :autosave on|off        - вкл/выкл автосохранение
+                    :stream on|off          - вкл/выкл потоковый вывод
+                    :status                 - показать состояние Tool
+                    :models                 - список локальных моделей
+                    :save                   - сохранить сессию в архив
+                    :exit                   - выход
+                    :web                    - открыть чат в браузере
+                    :embed build            - построить эмбеддинги
+                    :embed on|off           - вкл/выкл семантический поиск
+                    :embed auto <N>         - авто-перестроение каждые N сообщений
+                    :embed status           - состояние движка
+                    :persona auto           - обновить персону через ИИ
+                    :persona auto <N>       - авто-обновление каждые N сообщений
+                    :persona auto off       - отключить авто-обновление
+                    :remember               - сжать последние 10 сообщений
+                    :memory migrate         - миграция JSON в SQLite
+                    :memory status          - состояние долгой памяти
+                    :memory search <текст>  - текстовый поиск по памяти
+                    :memory auto <N>        - авто-сжатие каждые N сообщений
+                    :memory purge <дни>     - удалить старые записи
+                    :memorн default <имя>   - установить дефолтную колонку памяти
+                    :summarize              - сводка последних 20 сообщений
+                    :import <файл>          - импорт JSON-диалогов
+                    :think on|off           - размышление
+                    :websearch on|off       - поиск в интернете
+                    :theme <имя> <уровень>  - применить тему (1=CSS, 2=CSS+HTML, 3=CSS+HTML+JS)
+                    :theme off              - сбросить тему
+                    :preset                 - пресеты!
+                    :themes                 - показать список доступных тем
+                    :presets                - показать список доступных пресетов
+                    :game off               - отключить api
+                    :game status            - получить статус mode programmers
+                    :game list              - получить все колонки памяти (for easy mode in api)
+                    :game memory <колонка>  -  создать колонку
+                    :game clear <колонка>   - удалить данные из колонки
+                    :game export <колонка>  - экспортировать колонку 
+                    :storage default|short|long|archive - выбрать тип архитектуру не рекомендуется для личного использования
+                    :silent on|off          - только запись 
+                    :compress on|off        - авто-сжатие
+                    :context dynamic|static -заморозить контекст
             """);
+                } else {
+                    System.out.println("""
+            ===== БАЗОВЫЕ КОМАНДЫ =====
+            :mode api|local|manual|programmers
+            :model <имя>            - сменить модель
+            :models                 - список локальных моделей
+            :status                 - состояние Tool
+            :embed on|off           - вкл/выкл эмбеддинги
+            :embed build            - построить эмбеддинги
+            :web                    - открыть веб-интерфейс
+            :exit                   - выход
+
+            Для расширенного списка введи :help all
+            """);
+                }
+            }
+            // === NeuralFloppy 1.9.2 Новые Команды ===
+
             case ":mode" -> {
                 if (parts.length < 2) {
-                    System.out.println("Укажи режим: api, local, manual");
+                    System.out.println("Укажи режим: api, local, manual, programmers");
                     return;
                 }
                 switch (parts[1].toLowerCase()) {
                     case "api" -> currentMode = Mode.API;
                     case "local" -> currentMode = Mode.LOCAL;
                     case "manual" -> currentMode = Mode.MANUAL;
+                    case "programmers" -> {
+                        gameModeEnabled = true;
+                        System.out.println("Игровой API активирован. Принимаю запросы на /api/game и /api/full-control");
+                        System.out.println("Используй :game off для отключения.");
+                    }
                     default -> System.out.println("Неизвестный режим.");
                 }
-                System.out.println("Режим переключён на " + currentMode);
+            }
+
+            case ":game" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :game off | :game status | :game list | :game memory <колонка> | :game clear <колонка> | :game export <колонка>");
+                    return;
+                }
+                switch (parts[1].toLowerCase()) {
+                    case "off" -> {
+                        gameModeEnabled = false;
+                        System.out.println("Игровой API деактивирован.");
+                    }
+                    case "status" -> {
+                        System.out.println("Игровой API: " + (gameModeEnabled ? "активен" : "неактивен"));
+                        System.out.println("Колонка по умолчанию: " + (defaultColumn != null ? defaultColumn : "не задана"));
+                    }
+                    // Остальные команды :game будут обрабатываться в GameAPI
+                    default -> {
+                        System.out.println("Эта команда пока не реализована в консоли. Используйте API.");
+                    }
+                }
+            }
+
+            case ":storage" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :storage default|short|long|archive");
+                    return;
+                }
+                switch (parts[1].toLowerCase()) {
+                    case "default" -> {
+                        StorageManager.setMode("default");
+                        System.out.println("Режим хранения: классический (NDJSON + SQLite).");
+                    }
+                    case "short" -> {
+                        StorageManager.setMode("short");
+                        System.out.println("Режим хранения: короткий (только NDJSON).");
+                    }
+                    case "long" -> {
+                        StorageManager.setMode("long");
+                        System.out.println("Режим хранения: долгий (прямая запись в SQLite).");
+                    }
+                    case "archive" -> {
+                        StorageManager.setMode("archive");
+                        System.out.println("Режим хранения: архивный (сразу в холодную память).");
+                    }
+                    default -> System.out.println("Неизвестный режим хранения.");
+                }
+            }
+
+            case ":silent" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :silent on|off");
+                    return;
+                }
+                silentMode = parts[1].equalsIgnoreCase("on");
+                System.out.println("Тихий режим (без генерации ответа): " + (silentMode ? "включён" : "выключен"));
+            }
+
+            case ":compress" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :compress on|off");
+                    return;
+                }
+                compressEnabled = parts[1].equalsIgnoreCase("on");
+                System.out.println("Автосжатие в долгую память: " + (compressEnabled ? "включено" : "выключено"));
+            }
+
+            case ":context" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :context dynamic|static");
+                    return;
+                }
+                dynamicContext = parts[1].equalsIgnoreCase("dynamic");
+                System.out.println("Режим контекста: " + (dynamicContext ? "динамический" : "статический"));
+            }
+
+            case ":memory" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :memory new <имя> | use <имя> | list | delete <имя> | default <имя> | status | search <текст> | auto <N> | purge <дни>");
+                    return;
+                }
+                switch (parts[1].toLowerCase()) {
+                    case "default" -> {
+                        if (parts.length < 3) { System.out.println("Укажи имя колонки."); return; }
+                        defaultColumn = parts[2];
+                        System.out.println("Колонка по умолчанию установлена: " + defaultColumn);
+                    }
+                    default -> {
+                    }
+                }
             }
             case ":presets" -> {
                 Path presetsDir = Path.of("presets");
@@ -1004,7 +1234,6 @@ public class NeuralFloppyTool1_9_1 {
                         System.out.println("Авто-обновление персоны каждые " + personaAutoThreshold + " сообщ.");
                         return;
                     }
-                    // Ручной запуск
                     System.out.println("Анализирую последние диалоги и генерирую новую персону...");
                     String newPersona = autoPersona();
                     if (!newPersona.isBlank()) {
@@ -1099,52 +1328,6 @@ public class NeuralFloppyTool1_9_1 {
                 streaming = parts[1].equalsIgnoreCase("on");
                 System.out.println("Потоковый вывод " + (streaming ? "включен" : "выключен"));
             }
-            case ":memory" -> {
-                if (parts.length < 2) { System.out.println("Используй: :memory migrate|status|search|auto N|purge N"); return; }
-                switch (parts[1]) {
-                    case "migrate" -> {
-                        try {
-                            MemoryManager.migrateFromJson();
-                        } catch (Exception e) {
-                            System.out.println("Ошибка миграции: " + e.getMessage());
-                        }
-                    }
-                    case "status" -> {
-                        try {
-                            MemoryManager.printStatus();
-                        } catch (Exception e) {
-                            System.out.println("Ошибка статуса: " + e.getMessage());
-                        }
-                    }
-                    case "search" -> {
-                        if (parts.length < 3) { System.out.println("Укажи текст поиска."); return; }
-                        String q = String.join(" ", Arrays.copyOfRange(parts, 2, parts.length));
-                        try {
-                            for (MemoryManager.MemoryEntry e : MemoryManager.searchByText(q, 5)) {
-                                System.out.println("[Из памяти] " + e.text);
-                            }
-                        } catch (Exception ex) {
-                            System.out.println("Ошибка поиска: " + ex.getMessage());
-                        }
-                    }
-                    case "auto" -> {
-                        if (parts.length < 3) { System.out.println("Укажи число сообщений."); return; }
-                        memoryAutoThreshold = Integer.parseInt(parts[2]);
-                        memoryNewCount = 0;
-                        System.out.println("Авто-сжатие каждые " + memoryAutoThreshold + " сообщ.");
-                    }
-                    case "purge" -> {
-                        if (parts.length < 3) { System.out.println("Укажи возраст в днях."); return; }
-                        int days = Integer.parseInt(parts[2]);
-                        try {
-                            MemoryManager.purgeOld(days);
-                        } catch (Exception e) {
-                            System.out.println("Ошибка очистки: " + e.getMessage());
-                        }
-                    }
-                    default -> System.out.println("Неизвестная подкоманда :memory");
-                }
-            }
             case ":summarize" -> {
                 if (messages.size() < 2) { System.out.println("Мало сообщений для сводки."); return; }
                 System.out.println("Генерирую сводку последних 20 сообщений...");
@@ -1177,7 +1360,6 @@ public class NeuralFloppyTool1_9_1 {
         return (double) readable / text.length() > 0.2;
     }
     static boolean ensureOllamaRunning() {
-        // Проверяем, отвечает ли Ollama
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
@@ -1189,10 +1371,12 @@ public class NeuralFloppyTool1_9_1 {
         } catch (Exception e) {
             System.out.println("[Ollama] Не отвечает, пытаюсь запустить...");
         }
+
         try {
             String os = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb;
             if (os.contains("win")) {
+                // Windows: запускаем в отдельном окне, чтобы не висеть
                 pb = new ProcessBuilder("cmd", "/c", "start", "ollama", "serve");
             } else {
                 pb = new ProcessBuilder("ollama", "serve");
@@ -1264,9 +1448,15 @@ public class NeuralFloppyTool1_9_1 {
             server.createContext("/command", new CommandHandler());
             server.createContext("/ask", new AskHandler());
             server.createContext("/ask-stream", new AskStreamHandler());
+
+            // === 1.9.2: Game API Endpoints ===
+            server.createContext("/api/game", new GameAPI.GameHandler());
+            server.createContext("/api/full-control", new GameAPI.FullControlHandler());
+
             server.setExecutor(null);
             server.start();
-            System.out.println("Сервер запущен. Не закрывай это окно.");
+            System.out.println("Сервер запущен на http://localhost:8080");
+            System.out.println("Игровое API доступно на /api/game и /api/full-control");
         } catch (IOException e) {
             System.out.println("Ошибка запуска сервера: " + e.getMessage());
         }
@@ -1277,6 +1467,7 @@ public class NeuralFloppyTool1_9_1 {
             query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
             String result = "";
             try {
+                // Перенаправляем команду в handleCommand, но перехватываем вывод
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 PrintStream oldOut = System.out;
                 System.setOut(new PrintStream(baos, true, StandardCharsets.UTF_8));
@@ -1580,23 +1771,25 @@ public class NeuralFloppyTool1_9_1 {
         static void build() throws Exception {
             vectors.clear();
             texts.clear();
-            HttpClient client = HttpClient.newHttpClient();
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
             int skipped = 0;
             for (Message msg : messages) {
                 if (msg.content.isBlank()) continue;
-                // Обрезаем длинные сообщения (модель не любит больше ~2000 символов)
-                String text = msg.content.length() > 6000 ? msg.content.substring(0, 6000) : msg.content;
+                // Обрезаем до 500 символов, чтобы точно влезало в 2048 токенов
+                String text = msg.content.length() > 500 ? msg.content.substring(0, 500) : msg.content;
                 try {
                     double[] vec = getEmbedding(client, text);
                     vectors.add(vec);
                     texts.add(text);
                 } catch (Exception e) {
                     skipped++;
-                    // Просто пропускаем проблемные сообщения
+                    System.err.println("[EMBED] Ошибка для фрагмента: " + e.getMessage());
                 }
             }
             save();
-            System.out.println("Построено " + vectors.size() + " эмбеддингов. Пропущено: " + skipped);
+            System.out.println("[EMBED] Построено " + vectors.size() + " эмбеддингов. Пропущено: " + skipped);
         }
 
         static double[] getEmbedding(HttpClient client, String text) throws Exception {
@@ -1608,19 +1801,23 @@ public class NeuralFloppyTool1_9_1 {
                             "model", EMBED_MODEL,
                             "prompt", text
                     )), StandardCharsets.UTF_8))
+                    .timeout(Duration.ofSeconds(10))
                     .build();
             HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
             String body = resp.body();
             JsonObject json = GSON.fromJson(body, JsonObject.class);
 
-            // Проверяем, нет ли ошибки
             if (json.has("error")) {
                 throw new RuntimeException("Embedding error: " + json.get("error").toString());
             }
 
-            double[] vec = new double[getEmbeddingDimension()];
+            JsonArray embeddingArray = json.getAsJsonArray("embedding");
+            if (embeddingArray == null) {
+                throw new RuntimeException("No embedding in response");
+            }
+            double[] vec = new double[embeddingArray.size()]; // динамический размер
             int i = 0;
-            for (JsonElement e : json.getAsJsonArray("embedding")) {
+            for (JsonElement e : embeddingArray) {
                 vec[i++] = e.getAsDouble();
             }
             return vec;
@@ -1697,9 +1894,86 @@ public class NeuralFloppyTool1_9_1 {
             return "Ничего не найдено.";
         }
     }
+    static class StorageManager {
+        private static String currentMode = "default";
+
+        public static void setMode(String mode) {
+            currentMode = mode;
+        }
+
+        public static String getMode() {
+            return currentMode;
+        }
+    }
     static class Message {
         String role, content;
         long ts;
         Message(String r, String c, long t) { role = r; content = c; ts = t; }
+    }
+    // ================== МЕТОДЫ ДЛЯ GameAPI ==================
+
+    public boolean isGameModeEnabled() {
+        return gameModeEnabled;
+    }
+
+    public String getDefaultColumn() {
+        return defaultColumn;
+    }
+
+    public boolean executeCommand(String cmd) {
+        // Безопасное выполнение команд из API
+        // Запрещаем опасные команды
+        if (cmd.startsWith(":exit") || cmd.startsWith(":memory delete all")) {
+            return false;
+        }
+        try {
+            handleCommand(cmd);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void saveToColumn(String column, String data, String format) {
+        try {
+            String storageMode = StorageManager.getMode();
+            String fileName = "chat_" + column + ".ndjson";
+            Message msg = new Message("SYSTEM", data, Instant.now().getEpochSecond());
+            String line = GSON.toJson(msg) + "\n";
+            Files.writeString(Path.of(fileName), line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+
+            if (storageMode.equals("long") || storageMode.equals("archive")) {
+                MemoryManager.addCompressed(data, null);
+            }
+        } catch (Exception e) {
+            System.err.println("[GameAPI] Ошибка сохранения в колонку " + column + ": " + e.getMessage());
+        }
+    }
+
+    public String askLLM(String query, JsonObject state) {
+        try {
+            if (currentMode == Mode.API) {
+                return askAPI(query);
+            } else if (currentMode == Mode.LOCAL) {
+                return askLocal(query);
+            }
+        } catch (Exception e) {
+            System.err.println("[GameAPI] Ошибка вызова LLM: " + e.getMessage());
+        }
+        return "LLM not available";
+    }
+
+    public String analyzeWithLLM(String query, JsonObject state) {
+        try {
+            String prompt = "Проанализируй следующие данные и опиши их в стиле NeuralFloppy:\n" + state.toString();
+            if (currentMode == Mode.API) {
+                return askAPI(prompt);
+            } else if (currentMode == Mode.LOCAL) {
+                return askLocal(prompt);
+            }
+        } catch (Exception e) {
+            System.err.println("[GameAPI] Ошибка анализа LLM: " + e.getMessage());
+        }
+        return "LLM analysis not available";
     }
 }
