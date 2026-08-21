@@ -1,0 +1,9 @@
+{
+  "temperature": 0.7,
+  "max_tokens": 1024,
+  "stream": true,
+  "embed_model": "nomic-embed-text",
+  "embed_enabled": true,
+  "context_messages": 10,
+  "compress": true
+}
