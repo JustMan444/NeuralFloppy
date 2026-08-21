@@ -15,11 +15,11 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
 
-public class NeuralFloppyTool1_6 {
+public class NeuralFloppyTool1_7 {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
-    private static final String API_KEY = "sk-or-v1-...."; // твой ключ
+    private static final String API_KEY = "sk-or-v1-....."; // твой ключ
     private static double temperature = 0.7;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
@@ -43,7 +43,12 @@ public class NeuralFloppyTool1_6 {
     private static int personaAutoThreshold = 0; // 0 = выключено
     private static int personaNewCount = 0;
 
+    private static int memoryAutoThreshold = 0;
+    private static int memoryNewCount = 0;
+
     public static void main(String[] args) throws Exception {
+        // Запускаем Ollama, если спит
+        ensureOllamaRunning();
         currentPersona = Files.readString(Path.of(PERSONA_FILE));
         buildIndex();
         if (Files.exists(Path.of("data/embeddings.json"))) {
@@ -51,7 +56,7 @@ public class NeuralFloppyTool1_6 {
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
 
-        System.out.println("NeuralFloppy TOOL V1.6/*. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL V1.7/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -61,7 +66,7 @@ public class NeuralFloppyTool1_6 {
             String q = reader.readLine();
             if (q == null || q.isBlank()) continue;
             if (!isValidInput(q)) {
-                System.out.println("ИИ: Бро, кодировка сломалась. Повтори вопрос.");
+                System.out.println("ИИ:БРО ОШИБКА!ИЗ ЗА кодировки");
                 continue;
             }
 
@@ -76,7 +81,7 @@ public class NeuralFloppyTool1_6 {
             addToIndex(userMsg, messages.size() - 1);
 
             String answer = "";
-            System.out.print("\nИИ: ");
+            System.out.print("\nУчитель: ");
             switch (currentMode) {
                 case API -> answer = streaming ? askAPIStreaming(q) : askAPI(q);
                 case LOCAL -> answer = streaming ? askLocalStreaming(q) : askLocal(q);
@@ -96,6 +101,7 @@ public class NeuralFloppyTool1_6 {
                 if (autoSave) appendToNdjson(assistantMsg);
                 addToIndex(assistantMsg, messages.size() - 1);
             }
+            // Проверяем авто-перестроение
             if (autoSave && embedAutoThreshold > 0) {
                 embedNewCount++;
                 if (embedNewCount >= embedAutoThreshold) {
@@ -104,6 +110,7 @@ public class NeuralFloppyTool1_6 {
                     embedNewCount = 0;
                 }
             }
+            // Проверяем авто-обновление персоны
             if (personaAutoThreshold > 0) {
                 personaNewCount++;
                 if (personaNewCount >= personaAutoThreshold) {
@@ -117,6 +124,34 @@ public class NeuralFloppyTool1_6 {
                         System.out.println("Персона обновлена автоматически.");
                     }
                     personaNewCount = 0;
+                }
+            }
+            // Авто-сжатие в долгую память
+            if (memoryAutoThreshold > 0) {
+                memoryNewCount++;
+                if (memoryNewCount >= memoryAutoThreshold) {
+                    System.out.println("[Авто-память] Сжимаю...");
+                    if (messages.size() >= 2) {
+                        int count = Math.min(10, messages.size());
+                        List<Message> recent = messages.subList(messages.size() - count, messages.size()); //эххх лапмовые времена были
+                        StringBuilder history = new StringBuilder();
+                        for (Message m : recent) {
+                            history.append(m.role).append(": ").append(m.content).append("\n");
+                        }
+                        String compressPrompt = "Сожми следующий диалог в 3-5 предложений, сохранив суть, ключевые решения и код:\n" + history.toString();
+                        try {
+                            String compressed = "";
+                            if (currentMode == Mode.API) compressed = askAPI(compressPrompt);
+                            else if (currentMode == Mode.LOCAL) compressed = askLocal(compressPrompt);
+                            if (!compressed.isBlank() && !compressed.contains("Ошибка")) {
+                                HttpClient client = HttpClient.newHttpClient();
+                                double[] vec = EmbeddingEngine.getEmbedding(client, compressed);
+                                MemoryManager.addCompressed(compressed, vec);
+                                System.out.println("Сжатый фрагмент сохранён.");
+                            }
+                        } catch (Exception e) { System.out.println("Ошибка сжатия: " + e.getMessage()); }
+                    }
+                    memoryNewCount = 0;
                 }
             }
             System.out.println();
@@ -162,6 +197,7 @@ public class NeuralFloppyTool1_6 {
             if (content != null && !content.isJsonNull()) {
                 return content.getAsString();
             } else {
+                // Модель вернула пустой контент (например, safety filter)
                 return "Модель не ответила. Возможно, сработал фильтр безопасности. Попробуй другую модель.";
             }
         }
@@ -229,6 +265,7 @@ public class NeuralFloppyTool1_6 {
 
     // ================== LOCAL ==================
     static String askLocal(String question) throws Exception {
+        ensureOllamaRunning();
         String persona = currentPersona;
         List<String> ctx = searchContext(question, 10);
         String context = String.join("\n---\n", ctx);
@@ -273,6 +310,7 @@ public class NeuralFloppyTool1_6 {
             query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
             String answer = "";
             try {
+                // Выбираем метод в зависимости от текущего режима
                 switch (currentMode) {
                     case API:
                         answer = askAPI(query);
@@ -296,6 +334,7 @@ public class NeuralFloppyTool1_6 {
     }
 
     static String askLocalStreaming(String question) throws Exception {
+        ensureOllamaRunning();
         String persona = currentPersona;
         List<String> ctx = searchContext(question, 10);
         String context = String.join("\n---\n", ctx);
@@ -364,9 +403,9 @@ public class NeuralFloppyTool1_6 {
                     :embed auto <N>        - авто-перестроение каждые N сообщений
                     :embed status          - состояние движка
                     :persona auto          - ИИ анализирует диалоги и создаёт новую персону
-                    :persona auto          - ручное обновление персоны
                     :persona auto <N>      - авто-обновление каждые N сообщений
                     :persona auto off      - отключить авто-обновление
+                    :remember              - принудительно вспомнить
                     """);
             case ":mode" -> {
                 if (parts.length < 2) {
@@ -554,6 +593,47 @@ public class NeuralFloppyTool1_6 {
                     System.out.println("Ошибка: " + e.getMessage() + ". Ollama точно запущена?");
                 }
             }
+            case ":remember" -> {
+                if (messages.size() < 2) {
+                    System.out.println("Недостаточно сообщений для сжатия.");
+                    return;
+                }
+                System.out.println("Сжимаю последние 10 сообщений в долгую память...");
+                int count = Math.min(10, messages.size());
+                List<Message> recent = messages.subList(messages.size() - count, messages.size());
+                StringBuilder history = new StringBuilder();
+                for (Message m : recent) {
+                    history.append(m.role).append(": ").append(m.content).append("\n");
+                }
+                String compressPrompt = "Сожми следующий диалог в 1-2 предложения, сохранив суть, ключевые решения и код:\n" + history.toString();
+                try {
+                    String compressed = "";
+                    if (currentMode == Mode.API) {
+                        compressed = askAPI(compressPrompt);
+                    } else if (currentMode == Mode.LOCAL) {
+                        compressed = askLocal(compressPrompt);
+                    }
+                    System.out.println("[DEBUG] Сжатый ответ: " + compressed);
+                    if (!compressed.isBlank() && !compressed.contains("Ошибка")) {
+                        // Обрежем длинный сжатый текст, чтобы nomic-embed-text не подавился
+                        String shortText = compressed.length() > 500 ? compressed.substring(0, 500) : compressed;
+                        try {
+                            HttpClient client = HttpClient.newHttpClient();
+                            double[] vec = EmbeddingEngine.getEmbedding(client, shortText);
+                            MemoryManager.addCompressed(shortText, vec);
+                            System.out.println("Сжатый фрагмент сохранён в долгую память.");
+                        } catch (Exception inner) {
+                            System.out.println("Ошибка при построении эмбеддинга: " + inner.getClass().getSimpleName() + " - " + inner.getMessage());
+                            inner.printStackTrace();
+                        }
+                    } else {
+                        System.out.println("Не удалось сжать: пустой ответ или ошибка API.");
+                    }
+                } catch (Exception e) {
+                    System.out.println("Ошибка сжатия: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
             case ":stream" -> {
                 if (parts.length < 2) { System.out.println("Укажи on или off"); return; }
                 streaming = parts[1].equalsIgnoreCase("on");
@@ -572,6 +652,55 @@ public class NeuralFloppyTool1_6 {
         if (cleaned.isEmpty()) return false;
         long readable = text.chars().filter(c -> Character.isLetterOrDigit(c) || Character.isWhitespace(c)).count();
         return (double) readable / text.length() > 0.2;
+    }
+    static boolean ensureOllamaRunning() {
+        // Проверяем, отвечает ли Ollama
+        try {
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://localhost:11434/api/tags"))
+                    .GET()
+                    .build();
+            client.send(request, HttpResponse.BodyHandlers.ofString());
+            return true; // уже работает
+        } catch (Exception e) {
+            System.out.println("[Ollama] Не отвечает, пытаюсь запустить...");
+        }
+
+        // Пытаемся запустить ollama serve
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            ProcessBuilder pb;
+            if (os.contains("win")) {
+                // Windows: запускаем в отдельном окне, чтобы не висеть
+                pb = new ProcessBuilder("cmd", "/c", "start", "ollama", "serve");
+            } else {
+                pb = new ProcessBuilder("ollama", "serve");
+                pb.redirectErrorStream(true);
+            }
+            pb.start();
+            // Ждём до 30 секунд, пока Ollama проснётся
+            for (int i = 0; i < 30; i++) {
+                Thread.sleep(1000);
+                try {
+                    HttpClient client = HttpClient.newHttpClient();
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:11434/api/tags"))
+                            .GET()
+                            .build();
+                    client.send(request, HttpResponse.BodyHandlers.ofString());
+                    System.out.println("[Ollama] Запущена и отвечает.");
+                    return true;
+                } catch (Exception ignore) {
+                    System.out.print(".");
+                }
+            }
+            System.out.println("\n[Ollama] Не удалось дождаться запуска.");
+            return false;
+        } catch (Exception ex) {
+            System.out.println("[Ollama] Ошибка запуска: " + ex.getMessage());
+            return false;
+        }
     }
     static String autoPersona() {
         int count = Math.min(50, messages.size());
@@ -766,29 +895,54 @@ public class NeuralFloppyTool1_6 {
     }
 
     static List<String> searchContext(String query, int topN) {
+        List<String> activeResults = new ArrayList<>();
+
+        // 1. Поиск в активном индексе (эмбеддинги или wordIndex)
         if (embedEnabled && !EmbeddingEngine.vectors.isEmpty()) {
             try {
-                return EmbeddingEngine.search(query, topN);
+                activeResults = EmbeddingEngine.search(query, topN);
             } catch (Exception e) {
-                System.out.println("[Embed] Ошибка поиска: " + e.getMessage());
+                System.out.println("[Embed] Ошибка: " + e.getMessage());
             }
         }
-        // Fallback на старый wordIndex
-        Set<String> queryTokens = tokenize(query);
-        Map<Integer, Integer> scores = new HashMap<>();
-        for (String token : queryTokens) {
-            List<Integer> ids = wordIndex.get(token);
-            if (ids != null) ids.forEach(id -> scores.merge(id, 1, Integer::sum));
+        if (activeResults.isEmpty()) {
+            // Fallback на wordIndex
+            Set<String> tokens = tokenize(query);
+            Map<Integer, Integer> scores = new HashMap<>();
+            for (String token : tokens) {
+                List<Integer> ids = wordIndex.get(token);
+                if (ids != null) ids.forEach(id -> scores.merge(id, 1, Integer::sum));
+            }
+            activeResults = scores.entrySet().stream()
+                    .sorted((e1, e2) -> {
+                        int cmp = Integer.compare(e2.getValue(), e1.getValue());
+                        if (cmp == 0) cmp = Long.compare(messages.get(e2.getKey()).ts, messages.get(e1.getKey()).ts);
+                        return cmp;
+                    })
+                    .limit(topN)
+                    .map(e -> messages.get(e.getKey()).content)
+                    .collect(Collectors.toList());
         }
-        return scores.entrySet().stream()
-                .sorted((e1, e2) -> {
-                    int cmp = Integer.compare(e2.getValue(), e1.getValue());
-                    if (cmp == 0) cmp = Long.compare(messages.get(e2.getKey()).ts, messages.get(e1.getKey()).ts);
-                    return cmp;
-                })
-                .limit(topN)
-                .map(e -> messages.get(e.getKey()).content)
-                .collect(Collectors.toList());
+
+        // 2. Поиск в долгой (холодной) памяти
+        List<String> coldResults = new ArrayList<>();
+        try {
+            if (embedEnabled) {
+                HttpClient client = HttpClient.newHttpClient();
+                double[] queryVec = EmbeddingEngine.getEmbedding(client, query);
+                List<MemoryManager.MemoryEntry> cold = MemoryManager.search(queryVec, 3);
+                for (MemoryManager.MemoryEntry e : cold) {
+                    coldResults.add("[Из долгой памяти]: " + e.text);
+                }
+            }
+        } catch (Exception e) {
+            // Игнорируем ошибки холодного поиска
+        }
+
+        // 3. Объединяем: сначала активные, потом холодные
+        List<String> combined = new ArrayList<>(activeResults);
+        combined.addAll(coldResults);
+        return combined.stream().distinct().limit(topN).collect(Collectors.toList());
     }
 
     static String buildPrompt(String question) throws IOException {
@@ -846,6 +1000,7 @@ public class NeuralFloppyTool1_6 {
         }
 
         static double[] getEmbedding(HttpClient client, String text) throws Exception {
+            ensureOllamaRunning();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("http://localhost:11434/api/embeddings"))
                     .header("Content-Type", "application/json")
