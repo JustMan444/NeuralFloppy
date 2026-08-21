@@ -1,9 +1,0 @@
-{
-  "temperature": 0.8,
-  "max_tokens": 2048,
-  "stream": true,
-  "embed_model": "bge-m3",
-  "embed_enabled": true,
-  "context_messages": 20,
-  "compress": true
-}
