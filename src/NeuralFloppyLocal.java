@@ -1,3 +1,4 @@
+import com.google.gson.JsonElement;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.*;
@@ -7,23 +8,21 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.stream.*;
 
-public class NeuralFloppyAPI {
+public class NeuralFloppyLocal {
 
-    private static final String API_KEY = "sk-or-v1-...";
+    private static final String OLLAMA_URL = "http://localhost:11434/v1/chat/completions";
+    private static final String MODEL = "deepseek-r1-32k"; // или mistral, gemma2:2b, qwen2.5:0.5b
     private static final String PERSONA_FILE = "perso1na.txt";
     private static final String NDJSON_FILE = "data/c2hat.ndjson";
-    private static final String PROVIDERS_FILE = "providers.json";
     private static final Gson GSON = new Gson();
 
     private static List<Message> messages = new ArrayList<>();
     private static Map<String, List<Integer>> wordIndex = new HashMap<>();
-    private static ProviderConfig providerConfig;
 
     public static void main(String[] args) throws Exception {
         buildIndex();
-        loadProviderConfig();
-        System.out.println("NeuralFloppy API готов. " + messages.size() + " сообщений.");
-        System.out.println("Активная модель: " + providerConfig.active);
+        System.out.println("NeuralFloppy Local (Ollama) готов. " + messages.size() + " сообщений.");
+        System.out.println("Модель: " + MODEL);
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         while (true) {
@@ -33,16 +32,6 @@ public class NeuralFloppyAPI {
             if (q.equalsIgnoreCase("выход")) break;
             System.out.println("\nУчитель: " + askTeacher(q));
         }
-    }
-
-    static void loadProviderConfig() throws IOException {
-        String json = Files.readString(Path.of(PROVIDERS_FILE));
-        providerConfig = GSON.fromJson(json, ProviderConfig.class);
-    }
-
-    static class ProviderConfig {
-        String active;
-        List<String> catalog;
     }
 
     static void buildIndex() throws IOException {
@@ -98,33 +87,44 @@ public class NeuralFloppyAPI {
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://openrouter.ai/api/v1/chat/completions"))
-                .header("Authorization", "Bearer " + API_KEY)
-                .header("HTTP-Referer", "http://localhost")
-                .header("X-Title", "NeuralFloppy")
+                .uri(URI.create(OLLAMA_URL))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
-                        "model", providerConfig.active,
+                        "model", MODEL,
                         "messages", List.of(Map.of("role", "user", "content", prompt)),
                         "temperature", 0.7,
-                        "max_tokens", 2000
+                        "max_tokens", 8192
                 ))))
                 .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         String responseBody = response.body();
-        System.out.println("[DEBUG] " + responseBody);
+        System.out.println("[DEBUG] Ollama response: " + responseBody);
 
         JsonObject respJson = GSON.fromJson(responseBody, JsonObject.class);
         if (respJson.has("error")) {
-            String msg = respJson.getAsJsonObject("error").get("message").getAsString();
-            return "Ошибка: " + msg;
+            JsonElement err = respJson.get("error");
+            if (err.isJsonPrimitive()) {
+                return "Ошибка Ollama: " + err.getAsString();
+            } else {
+                return "Ошибка Ollama: " + err.toString();
+            }
         }
         if (respJson.has("choices") && respJson.getAsJsonArray("choices").size() > 0) {
-            return respJson.getAsJsonArray("choices").get(0).getAsJsonObject()
-                    .getAsJsonObject("message").get("content").getAsString();
+            JsonObject msg = respJson.getAsJsonArray("choices")
+                    .get(0).getAsJsonObject()
+                    .getAsJsonObject("message");
+
+            String raw = msg.get("content").getAsString();
+            // Убираем блоки если они вдруг попали в контент
+            raw = raw.replaceAll("(?s)сюда.*?", "").trim();
+            // Если ответ всё ещё содержит мусор, вытаскиваем только то, что после последнего ответа
+            if (raw.contains("ответ:")) {
+                raw = raw.substring(raw.lastIndexOf("ответ:") + 6).trim();
+            }
+            return raw.isEmpty() ? raw : raw;
         }
-        return "Пустой ответ. Сырое: " + responseBody;
+        return "Пустой ответ от Ollama. Сырое: " + responseBody;
     }
 
     static Set<String> tokenize(String text) {
