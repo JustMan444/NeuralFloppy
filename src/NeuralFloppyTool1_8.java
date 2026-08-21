@@ -15,11 +15,11 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
 
-public class NeuralFloppyTool1_7 {
+public class NeuralFloppyTool1_8 {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
-    private static final String API_KEY = "sk-or-v1-....."; // твой ключ
+    private static final String API_KEY = "sk-or-v1-..."; // твой ключ
     private static double temperature = 0.7;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
@@ -56,7 +56,7 @@ public class NeuralFloppyTool1_7 {
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
 
-        System.out.println("NeuralFloppy TOOL V1.7/*. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL V1.8/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -66,7 +66,7 @@ public class NeuralFloppyTool1_7 {
             String q = reader.readLine();
             if (q == null || q.isBlank()) continue;
             if (!isValidInput(q)) {
-                System.out.println("ИИ:БРО ОШИБКА!ИЗ ЗА кодировки");
+                System.out.println("ИИ: Бро, кодировка сломалась. Повтори вопрос.");
                 continue;
             }
 
@@ -81,7 +81,7 @@ public class NeuralFloppyTool1_7 {
             addToIndex(userMsg, messages.size() - 1);
 
             String answer = "";
-            System.out.print("\nУчитель: ");
+            System.out.print("\nИИ: ");
             switch (currentMode) {
                 case API -> answer = streaming ? askAPIStreaming(q) : askAPI(q);
                 case LOCAL -> answer = streaming ? askLocalStreaming(q) : askLocal(q);
@@ -133,7 +133,7 @@ public class NeuralFloppyTool1_7 {
                     System.out.println("[Авто-память] Сжимаю...");
                     if (messages.size() >= 2) {
                         int count = Math.min(10, messages.size());
-                        List<Message> recent = messages.subList(messages.size() - count, messages.size()); //эххх лапмовые времена были
+                        List<Message> recent = messages.subList(messages.size() - count, messages.size());
                         StringBuilder history = new StringBuilder();
                         for (Message m : recent) {
                             history.append(m.role).append(": ").append(m.content).append("\n");
@@ -159,7 +159,7 @@ public class NeuralFloppyTool1_7 {
     }
 
     // ================== API ==================
-    static String askAPI(String question) throws Exception {
+    static String askAPI(String question) throws Exception { //Absolute Cinema
         String persona = currentPersona;
         List<String> ctx = searchContext(question, 10);
         String context = String.join("\n---\n", ctx);
@@ -310,7 +310,6 @@ public class NeuralFloppyTool1_7 {
             query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
             String answer = "";
             try {
-                // Выбираем метод в зависимости от текущего режима
                 switch (currentMode) {
                     case API:
                         answer = askAPI(query);
@@ -405,7 +404,14 @@ public class NeuralFloppyTool1_7 {
                     :persona auto          - ИИ анализирует диалоги и создаёт новую персону
                     :persona auto <N>      - авто-обновление каждые N сообщений
                     :persona auto off      - отключить авто-обновление
-                    :remember              - принудительно вспомнить
+                    :remember              - принудительно запомнить
+                    :memory migrate        - перенести long_term_memory.json в SQLite
+                    :memory status         - состояние долгой памяти
+                    :memory search <текст> - текстовый поиск по памяти
+                    :memory auto <N>       - авто-сжатие каждые N сообщений
+                    :memory purge <дни>    - удалить записи старше N дней
+                    :summarize             - сводка последних 20 сообщений
+                    :import                - добавить json файл в chatHistory
                     """);
             case ":mode" -> {
                 if (parts.length < 2) {
@@ -485,6 +491,75 @@ public class NeuralFloppyTool1_7 {
             case ":web" -> {
                 System.out.println("Запускаю веб-интерфейс на http://localhost:8080");
                 startWebServer();
+            }
+            case ":import" -> {
+                if (parts.length < 2) {
+                    System.out.println("Укажи путь к JSON-файлу. Например: :import chat_export.json");
+                    return;
+                }
+                String importPath = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
+                Path filePath = Path.of(importPath);
+                if (!Files.exists(filePath)) {
+                    System.out.println("Файл не найден: " + filePath.toAbsolutePath());
+                    return;
+                }
+                System.out.println("Импортирую " + filePath.getFileName() + "...");
+                try {
+                    String raw = Files.readString(filePath, StandardCharsets.UTF_8);
+                    JsonElement root = GSON.fromJson(raw, JsonElement.class);
+                    List<Map<String, String>> imported = new ArrayList<>();
+
+                    if (root.isJsonArray()) {
+                        // Массив сообщений
+                        for (JsonElement el : root.getAsJsonArray()) {
+                            JsonObject obj = el.getAsJsonObject();
+                            if (obj.has("role") && obj.has("content")) {
+                                imported.add(Map.of(
+                                        "role", obj.get("role").getAsString(),
+                                        "content", obj.get("content").getAsString()
+                                ));
+                            }
+                        }
+                    } else if (root.isJsonObject()) {
+                        JsonObject obj = root.getAsJsonObject();
+                        if (obj.has("messages")) {
+                            // Объект с полем "messages"
+                            for (JsonElement el : obj.getAsJsonArray("messages")) {
+                                JsonObject msg = el.getAsJsonObject();
+                                if (msg.has("role") && msg.has("content")) {
+                                    imported.add(Map.of(
+                                            "role", msg.get("role").getAsString(),
+                                            "content", msg.get("content").getAsString()
+                                    ));
+                                }
+                            }
+                        } else if (obj.has("role") && obj.has("content")) {
+                            imported.add(Map.of(
+                                    "role", obj.get("role").getAsString(),
+                                    "content", obj.get("content").getAsString()
+                            ));
+                        }
+                    }
+
+                    int added = 0;
+                    for (Map<String, String> m : imported) {
+                        String role = m.get("role");
+                        String content = m.get("content");
+                        if (role == null || content == null) continue;
+                        Message msg = new Message(role, content, Instant.now().getEpochSecond());
+                        messages.add(msg);
+                        addToIndex(msg, messages.size() - 1);
+                        if (autoSave) appendToNdjson(msg);
+                        added++;
+                    }
+                    System.out.println("Импортировано " + added + " сообщений.");
+                    if (added > 0 && embedEnabled) {
+                        System.out.println("Перестраиваю эмбеддинги...");
+                        EmbeddingEngine.build();
+                    }
+                } catch (Exception e) {
+                    System.out.println("Ошибка импорта: " + e.getMessage());
+                }
             }
             case ":persona" -> {
                 if (parts.length < 2) {
@@ -639,6 +714,69 @@ public class NeuralFloppyTool1_7 {
                 streaming = parts[1].equalsIgnoreCase("on");
                 System.out.println("Потоковый вывод " + (streaming ? "включен" : "выключен"));
             }
+            case ":memory" -> {
+                if (parts.length < 2) { System.out.println("Используй: :memory migrate|status|search|auto N|purge N"); return; }
+                switch (parts[1]) {
+                    case "migrate" -> {
+                        try {
+                            MemoryManager.migrateFromJson();
+                        } catch (Exception e) {
+                            System.out.println("Ошибка миграции: " + e.getMessage());
+                        }
+                    }
+                    case "status" -> {
+                        try {
+                            MemoryManager.printStatus();
+                        } catch (Exception e) {
+                            System.out.println("Ошибка статуса: " + e.getMessage());
+                        }
+                    }
+                    case "search" -> {
+                        if (parts.length < 3) { System.out.println("Укажи текст поиска."); return; }
+                        String q = String.join(" ", Arrays.copyOfRange(parts, 2, parts.length));
+                        try {
+                            for (MemoryManager.MemoryEntry e : MemoryManager.searchByText(q, 5)) {
+                                System.out.println("[Из памяти] " + e.text);
+                            }
+                        } catch (Exception ex) {
+                            System.out.println("Ошибка поиска: " + ex.getMessage());
+                        }
+                    }
+                    case "auto" -> {
+                        if (parts.length < 3) { System.out.println("Укажи число сообщений."); return; }
+                        memoryAutoThreshold = Integer.parseInt(parts[2]);
+                        memoryNewCount = 0;
+                        System.out.println("Авто-сжатие каждые " + memoryAutoThreshold + " сообщ.");
+                    }
+                    case "purge" -> {
+                        if (parts.length < 3) { System.out.println("Укажи возраст в днях."); return; }
+                        int days = Integer.parseInt(parts[2]);
+                        try {
+                            MemoryManager.purgeOld(days);
+                        } catch (Exception e) {
+                            System.out.println("Ошибка очистки: " + e.getMessage());
+                        }
+                    }
+                    default -> System.out.println("Неизвестная подкоманда :memory");
+                }
+            }
+            case ":summarize" -> {
+                if (messages.size() < 2) { System.out.println("Мало сообщений для сводки."); return; }
+                System.out.println("Генерирую сводку последних 20 сообщений...");
+                int cnt = Math.min(20, messages.size());
+                List<Message> recent = messages.subList(messages.size() - cnt, messages.size());
+                StringBuilder hist = new StringBuilder();
+                for (Message m : recent) hist.append(m.role).append(": ").append(m.content).append("\n");
+                String prompt = "Сделай краткий дайджест следующего диалога (3-5 предложений):\n" + hist.toString();
+                try {
+                    String summary = "";
+                    if (currentMode == Mode.API) summary = askAPI(prompt);
+                    else if (currentMode == Mode.LOCAL) summary = askLocal(prompt);
+                    System.out.println("Сводка:\n" + summary);
+                } catch (Exception e) {
+                    System.out.println("Ошибка сводки: " + e.getMessage());
+                }
+            }
             case ":save" -> saveArchive();
             case ":exit" -> System.exit(0);
             default -> System.out.println("Неизвестная команда. :help для списка.");
@@ -654,7 +792,6 @@ public class NeuralFloppyTool1_7 {
         return (double) readable / text.length() > 0.2;
     }
     static boolean ensureOllamaRunning() {
-        // Проверяем, отвечает ли Ollama
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
@@ -662,17 +799,14 @@ public class NeuralFloppyTool1_7 {
                     .GET()
                     .build();
             client.send(request, HttpResponse.BodyHandlers.ofString());
-            return true; // уже работает
+            return true;
         } catch (Exception e) {
             System.out.println("[Ollama] Не отвечает, пытаюсь запустить...");
         }
-
-        // Пытаемся запустить ollama serve
         try {
             String os = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb;
             if (os.contains("win")) {
-                // Windows: запускаем в отдельном окне, чтобы не висеть
                 pb = new ProcessBuilder("cmd", "/c", "start", "ollama", "serve");
             } else {
                 pb = new ProcessBuilder("ollama", "serve");
@@ -1012,8 +1146,6 @@ public class NeuralFloppyTool1_7 {
             HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
             String body = resp.body();
             JsonObject json = GSON.fromJson(body, JsonObject.class);
-
-            // Проверяем, нет ли ошибки
             if (json.has("error")) {
                 throw new RuntimeException("Embedding error: " + json.get("error").toString());
             }
