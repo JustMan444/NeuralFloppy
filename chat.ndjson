@@ -4,3 +4,5 @@
 {"role":"ASSISTANT","content":"Ошибка Ollama: {\"error\":{\"message\":\"model \u0027llama3.1:8b\u0027 not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n","ts":1787336866}
 {"role":"USER","content":"YE!","ts":1787337578}
 {"role":"USER","content":"lol","ts":1787337581}
+{"role":"USER","content":"its test 1.5 Version","ts":1787337712}
+{"role":"USER","content":"Its test 1.6 Version :D","ts":1787337783}

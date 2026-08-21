@@ -15,11 +15,11 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
 
-public class NeuralFloppyTool1_5 {
+public class NeuralFloppyTool1_6 {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
-    private static final String API_KEY = "sk-or-v1-..."; // твой ключ
+    private static final String API_KEY = "sk-or-v1-...."; // твой ключ
     private static double temperature = 0.7;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
@@ -40,6 +40,9 @@ public class NeuralFloppyTool1_5 {
     private static int embedAutoThreshold = 0; // 0 = выключено
     private static int embedNewCount = 0;
 
+    private static int personaAutoThreshold = 0; // 0 = выключено
+    private static int personaNewCount = 0;
+
     public static void main(String[] args) throws Exception {
         currentPersona = Files.readString(Path.of(PERSONA_FILE));
         buildIndex();
@@ -48,7 +51,7 @@ public class NeuralFloppyTool1_5 {
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
 
-        System.out.println("NeuralFloppy TOOL V1.5!/*. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL V1.6/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -58,7 +61,7 @@ public class NeuralFloppyTool1_5 {
             String q = reader.readLine();
             if (q == null || q.isBlank()) continue;
             if (!isValidInput(q)) {
-                System.out.println("Учитель: Бро, кодировка сломалась. Повтори вопрос.");
+                System.out.println("ИИ: Бро, кодировка сломалась. Повтори вопрос.");
                 continue;
             }
 
@@ -73,7 +76,7 @@ public class NeuralFloppyTool1_5 {
             addToIndex(userMsg, messages.size() - 1);
 
             String answer = "";
-            System.out.print("\nУчитель: ");
+            System.out.print("\nИИ: ");
             switch (currentMode) {
                 case API -> answer = streaming ? askAPIStreaming(q) : askAPI(q);
                 case LOCAL -> answer = streaming ? askLocalStreaming(q) : askLocal(q);
@@ -93,13 +96,27 @@ public class NeuralFloppyTool1_5 {
                 if (autoSave) appendToNdjson(assistantMsg);
                 addToIndex(assistantMsg, messages.size() - 1);
             }
-            // Проверяем авто-перестроение
             if (autoSave && embedAutoThreshold > 0) {
                 embedNewCount++;
                 if (embedNewCount >= embedAutoThreshold) {
                     System.out.println("[Авто-embed] Перестраиваю эмбеддинги...");
                     EmbeddingEngine.build();
                     embedNewCount = 0;
+                }
+            }
+            if (personaAutoThreshold > 0) {
+                personaNewCount++;
+                if (personaNewCount >= personaAutoThreshold) {
+                    System.out.println("[Авто-persona] Генерирую новую персону...");
+                    String newPersona = autoPersona();
+                    if (!newPersona.isBlank()) {
+                        Files.createDirectories(Path.of(ARCHIVE_DIR));
+                        Files.writeString(Path.of(ARCHIVE_DIR, "persona_backup_" + Instant.now().toString().replace(":", "-") + ".txt"), currentPersona);
+                        Files.writeString(Path.of(PERSONA_FILE), newPersona);
+                        currentPersona = newPersona;
+                        System.out.println("Персона обновлена автоматически.");
+                    }
+                    personaNewCount = 0;
                 }
             }
             System.out.println();
@@ -139,8 +156,14 @@ public class NeuralFloppyTool1_5 {
         String body = response.body();
         JsonObject json = GSON.fromJson(body, JsonObject.class);
         if (json.has("choices") && json.getAsJsonArray("choices").size() > 0) {
-            return json.getAsJsonArray("choices").get(0).getAsJsonObject()
-                    .getAsJsonObject("message").get("content").getAsString();
+            JsonObject message = json.getAsJsonArray("choices").get(0)
+                    .getAsJsonObject().getAsJsonObject("message");
+            JsonElement content = message.get("content");
+            if (content != null && !content.isJsonNull()) {
+                return content.getAsString();
+            } else {
+                return "Модель не ответила. Возможно, сработал фильтр безопасности. Попробуй другую модель.";
+            }
         }
         return "Ошибка API: " + body;
     }
@@ -235,7 +258,12 @@ public class NeuralFloppyTool1_5 {
         String body = response.body();
         JsonObject json = GSON.fromJson(body, JsonObject.class);
         if (json.has("response")) {
-            return json.get("response").getAsString();
+            JsonElement resp = json.get("response");
+            if (resp != null && !resp.isJsonNull()) {
+                return resp.getAsString();
+            } else {
+                return "Локальная модель вернула пустой ответ.";
+            }
         }
         return "Ошибка Ollama: " + body;
     }
@@ -245,7 +273,6 @@ public class NeuralFloppyTool1_5 {
             query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
             String answer = "";
             try {
-                // Выбираем метод в зависимости от текущего режима
                 switch (currentMode) {
                     case API:
                         answer = askAPI(query);
@@ -318,27 +345,34 @@ public class NeuralFloppyTool1_5 {
         String[] parts = cmd.split("\\s+");
         switch (parts[0]) {
             case ":help" -> System.out.println("""
-                Команды:
-                :mode api|local|manual - переключить режим
-                :model <имя>           - сменить модель
-                :persona               - показать текущую персону
-                :persona save <имя>    - сохранить текущую персону в профиль
-                :persona load <имя>    - загрузить персону из профиля
-                :persona new <имя>     - создать новый пустой профиль
-                :autosave on|off       - вкл/выкл автосохранение
-                :stream on|off         - вкл/выкл потоковый вывод
-                :status                - показать состояние Tool
-                :models                - показать список локальных моделей
-                :save                  - сохранить сессию в архив
-                :exit                  - выход
-                :web                   - открытие чата в браузере
-                :embed build           - построить эмбеддинги для всей базы
-                :embed on|off          - вкл/выкл семантический поиск
-                :embed auto <N>        - авто-перестроение каждые N сообщений
-                :embed status          - состояние движка
-                """);
+                    Команды:
+                    :mode api|local|manual - переключить режим
+                    :model <имя>           - сменить модель
+                    :persona               - показать текущую персону
+                    :persona save <имя>    - сохранить текущую персону в профиль
+                    :persona load <имя>    - загрузить персону из профиля
+                    :persona new <имя>     - создать новый пустой профиль
+                    :autosave on|off       - вкл/выкл автосохранение
+                    :stream on|off         - вкл/выкл потоковый вывод
+                    :status                - показать состояние Tool
+                    :models                - показать список локальных моделей
+                    :save                  - сохранить сессию в архив
+                    :exit                  - выход
+                    :web                   - открытие чата в браузере
+                    :embed build           - построить эмбеддинги для всей базы
+                    :embed on|off          - вкл/выкл семантический поиск
+                    :embed auto <N>        - авто-перестроение каждые N сообщений
+                    :embed status          - состояние движка
+                    :persona auto          - ИИ анализирует диалоги и создаёт новую персону
+                    :persona auto          - ручное обновление персоны
+                    :persona auto <N>      - авто-обновление каждые N сообщений
+                    :persona auto off      - отключить авто-обновление
+                    """);
             case ":mode" -> {
-                if (parts.length < 2) { System.out.println("Укажи режим: api, local, manual"); return; }
+                if (parts.length < 2) {
+                    System.out.println("Укажи режим: api, local, manual");
+                    return;
+                }
                 switch (parts[1].toLowerCase()) {
                     case "api" -> currentMode = Mode.API;
                     case "local" -> currentMode = Mode.LOCAL;
@@ -402,7 +436,10 @@ public class NeuralFloppyTool1_5 {
             }
 
             case ":model" -> {
-                if (parts.length < 2) { System.out.println("Укажи имя модели."); return; }
+                if (parts.length < 2) {
+                    System.out.println("Укажи имя модели.");
+                    return;
+                }
                 currentModel = parts[1];
                 System.out.println("Модель сменена на " + currentModel);
             }
@@ -455,8 +492,31 @@ public class NeuralFloppyTool1_5 {
                     Files.writeString(profilePath, template);
                     System.out.println("Новая персона создана: personas/" + profileName + ".txt");
                     System.out.println("Отредактируй этот файл, а затем загрузи его командой :persona load " + profileName);
+                } else if (parts[1].equals("auto")) {
+                    if (parts.length >= 3 && parts[2].equalsIgnoreCase("off")) {
+                        personaAutoThreshold = 0;
+                        personaNewCount = 0;
+                        System.out.println("Авто-обновление персоны выключено.");
+                        return;
+                    }
+                    if (parts.length >= 3 && parts[2].matches("\\d+")) {
+                        personaAutoThreshold = Integer.parseInt(parts[2]);
+                        personaNewCount = 0;
+                        System.out.println("Авто-обновление персоны каждые " + personaAutoThreshold + " сообщ.");
+                        return;
+                    }
+                    // Ручной запуск
+                    System.out.println("Анализирую последние диалоги и генерирую новую персону...");
+                    String newPersona = autoPersona();
+                    if (!newPersona.isBlank()) {
+                        Files.writeString(Path.of(ARCHIVE_DIR, "persona_backup_" + Instant.now().toString().replace(":", "-") + ".txt"), currentPersona);
+                        Files.writeString(Path.of(PERSONA_FILE), newPersona);
+                        currentPersona = newPersona;
+                        System.out.println("Персона обновлена!");
+                    }
                 }
             }
+
             case ":autosave" -> {
                 if (parts.length < 2) { System.out.println("Укажи on или off"); return; }
                 autoSave = parts[1].equalsIgnoreCase("on");
@@ -513,6 +573,41 @@ public class NeuralFloppyTool1_5 {
         long readable = text.chars().filter(c -> Character.isLetterOrDigit(c) || Character.isWhitespace(c)).count();
         return (double) readable / text.length() > 0.2;
     }
+    static String autoPersona() {
+        int count = Math.min(50, messages.size());
+        if (count == 0) return "";
+        List<Message> recent = messages.subList(messages.size() - count, messages.size());
+        StringBuilder history = new StringBuilder();
+        for (Message m : recent) {
+            history.append(m.role).append(": ").append(m.content).append("\n");
+        }
+        String analysisPrompt = """
+        Ты — эксперт по психологии пользователей. Проанализируй следующие диалоги и создай новый системный промт для ИИ-наставника.
+        Опиши стиль общения, интересы, слабости пользователя. Предложи такой стиль, который будет максимально полезен и приятен пользователю.
+        Верни ТОЛЬКО текст нового системного промта, без пояснений.
+        
+        ДИАЛОГИ:
+        """ + history.toString();
+
+        try {
+            String answer = "";
+            if (currentMode == Mode.API) {
+                answer = askAPI(analysisPrompt);
+            } else if (currentMode == Mode.LOCAL) {
+                answer = askLocal(analysisPrompt);
+            } else {
+                System.out.println("Ручной режим. Скопируй промт и вставь ответ:");
+                System.out.println(analysisPrompt);
+                System.out.print("Новая персона: ");
+                answer = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8)).readLine();
+            }
+            return answer != null ? answer.trim() : "";
+        } catch (Exception e) {
+            System.out.println("Ошибка генерации персоны: " + e.getMessage());
+            return "";
+        }
+    }
+
     static void startWebServer() {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
@@ -570,7 +665,7 @@ public class NeuralFloppyTool1_5 {
                 </style>
             </head>
             <body>
-                <h1>NeuralFloppy v1.5 Web Console</h1>
+                <h1>NeuralFloppy v1.6 Web Console</h1>
                 <div id="chat"></div>
                 <div class="panel">
                     <label>Режим:</label>
