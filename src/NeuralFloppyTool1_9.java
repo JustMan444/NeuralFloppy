@@ -14,8 +14,9 @@ import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
+import java.net.URLEncoder;
 
-public class NeuralFloppyTool1_8 {
+public class NeuralFloppyTool1_9 {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
@@ -34,6 +35,8 @@ public class NeuralFloppyTool1_8 {
     private static String currentModel = "openrouter/free";
     private static boolean autoSave = true;
     private static boolean streaming = true;
+    private static boolean thinkingEnabled = false;
+    private static boolean webSearchEnabled = false;
 
     // Эмбеддинги
     private static boolean embedEnabled = false;
@@ -56,7 +59,7 @@ public class NeuralFloppyTool1_8 {
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
 
-        System.out.println("NeuralFloppy TOOL V1.8/*. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL V1.9/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -66,7 +69,7 @@ public class NeuralFloppyTool1_8 {
             String q = reader.readLine();
             if (q == null || q.isBlank()) continue;
             if (!isValidInput(q)) {
-                System.out.println("ИИ: Бро, кодировка сломалась. Повтори вопрос.");
+                System.out.println("ИИ: Ошибка кодировки");
                 continue;
             }
 
@@ -159,7 +162,7 @@ public class NeuralFloppyTool1_8 {
     }
 
     // ================== API ==================
-    static String askAPI(String question) throws Exception { //Absolute Cinema
+    static String askAPI(String question) throws Exception {
         String persona = currentPersona;
         List<String> ctx = searchContext(question, 10);
         String context = String.join("\n---\n", ctx);
@@ -171,6 +174,24 @@ public class NeuralFloppyTool1_8 {
 
             Ученик спросил: %s
             Ответь как тот самый наставник:""", persona, context, question);
+
+        // Автоматический поиск в интернете (если включён)
+        if (webSearchEnabled) {
+            // Проверяем, есть ли в контексте достаточно информации
+            if (ctx.isEmpty() || ctx.size() < 3) {
+                System.out.println("[Авто-поиск] Ищу в интернете: " + question);
+                try {
+                    String webResult = WebSearchEngine.search(question);
+                    if (!webResult.isBlank()) {
+                        context += "\n[Из интернета]: " + webResult;
+                    }
+                } catch (Exception e) { /* игнорируем */ }
+            }
+        }
+        if (thinkingEnabled) {
+            // Добавляем инструкцию для модели думать пошагово
+            prompt = "Думай шаг за шагом и рассуждай вслух перед ответом.\n" + prompt;
+        }
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
@@ -203,6 +224,64 @@ public class NeuralFloppyTool1_8 {
         }
         return "Ошибка API: " + body;
     }
+    static String askAPIStreamingThinking(String question) throws Exception {
+        String persona = currentPersona;
+        List<String> ctx = searchContext(question, 10);
+        String context = String.join("\n---\n", ctx);
+        String prompt = String.format("""
+        %s
+
+        Вот история твоего общения с учеником:
+        %s
+
+        Ученик спросил: %s
+        Ответь как тот самый наставник:""", persona, context, question);
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://openrouter.ai/api/v1/chat/completions"))
+                .header("Authorization", "Bearer " + API_KEY)
+                .header("HTTP-Referer", "http://localhost")
+                .header("X-Title", "NeuralFloppy")
+                .header("Content-Type", "application/json; charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
+                        "model", "deepseek/deepseek-r1:free",
+                        "messages", List.of(Map.of("role", "user", "content", prompt)),
+                        "temperature", 0.7,
+                        "max_tokens", 2048,
+                        "stream", true,
+                        "include_reasoning", true
+                )), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
+        StringBuilder fullAnswer = new StringBuilder();
+        String line;
+        while ((line = in.readLine()) != null) {
+            if (line.startsWith("data: ")) {
+                String jsonStr = line.substring(6).trim();
+                if (jsonStr.equals("[DONE]")) continue;
+                try {
+                    JsonObject json = GSON.fromJson(jsonStr, JsonObject.class);
+                    if (json.has("choices") && json.getAsJsonArray("choices").size() > 0) {
+                        JsonObject delta = json.getAsJsonArray("choices").get(0).getAsJsonObject();
+                        if (delta.has("delta") && delta.getAsJsonObject("delta").has("reasoning")) {
+                            String reasoning = delta.getAsJsonObject("delta").get("reasoning").getAsString();
+                            System.out.print("[Мысль]: " + reasoning);
+                        }
+                        if (delta.has("delta") && delta.getAsJsonObject("delta").has("content")) {
+                            String chunk = delta.getAsJsonObject("delta").get("content").getAsString();
+                            System.out.print(chunk);
+                            fullAnswer.append(chunk);
+                        }
+                    }
+                } catch (Exception e) {}
+            }
+        }
+        System.out.println();
+        return fullAnswer.toString();
+    }
 
     static String askAPIStreaming(String question) throws Exception {
         String persona = currentPersona;
@@ -215,7 +294,7 @@ public class NeuralFloppyTool1_8 {
             %s
 
             Ученик спросил: %s
-            Ответь как тот самый наставник:""", persona, context, question);
+            Ответь как тот самый наставник:""", persona, context, question); //хех
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
@@ -383,36 +462,40 @@ public class NeuralFloppyTool1_8 {
         String[] parts = cmd.split("\\s+");
         switch (parts[0]) {
             case ":help" -> System.out.println("""
-                    Команды:
-                    :mode api|local|manual - переключить режим
-                    :model <имя>           - сменить модель
-                    :persona               - показать текущую персону
-                    :persona save <имя>    - сохранить текущую персону в профиль
-                    :persona load <имя>    - загрузить персону из профиля
-                    :persona new <имя>     - создать новый пустой профиль
-                    :autosave on|off       - вкл/выкл автосохранение
-                    :stream on|off         - вкл/выкл потоковый вывод
-                    :status                - показать состояние Tool
-                    :models                - показать список локальных моделей
-                    :save                  - сохранить сессию в архив
-                    :exit                  - выход
-                    :web                   - открытие чата в браузере
-                    :embed build           - построить эмбеддинги для всей базы
-                    :embed on|off          - вкл/выкл семантический поиск
-                    :embed auto <N>        - авто-перестроение каждые N сообщений
-                    :embed status          - состояние движка
-                    :persona auto          - ИИ анализирует диалоги и создаёт новую персону
-                    :persona auto <N>      - авто-обновление каждые N сообщений
-                    :persona auto off      - отключить авто-обновление
-                    :remember              - принудительно запомнить
-                    :memory migrate        - перенести long_term_memory.json в SQLite
-                    :memory status         - состояние долгой памяти
-                    :memory search <текст> - текстовый поиск по памяти
-                    :memory auto <N>       - авто-сжатие каждые N сообщений
-                    :memory purge <дни>    - удалить записи старше N дней
-                    :summarize             - сводка последних 20 сообщений
-                    :import                - добавить json файл в chatHistory
-                    """);
+            Команды:
+            :mode api|local|manual  - переключить режим
+            :model <имя>            - сменить модель
+            :think on|off           - включить/выключить режим размышлений
+            :websearch on|off       - включить/выключить авто-поиск в интернете
+            :persona                - показать текущую персону
+            :persona save <имя>     - сохранить персону в профиль
+            :persona load <имя>     - загрузить персону из профиля
+            :persona new <имя>      - создать новый профиль
+            :autosave on|off        - вкл/выкл автосохранение
+            :stream on|off          - вкл/выкл потоковый вывод
+            :status                 - показать состояние Tool
+            :models                 - список локальных моделей
+            :save                   - сохранить сессию в архив
+            :exit                   - выход
+            :web                    - открыть чат в браузере
+            :embed build            - построить эмбеддинги
+            :embed on|off           - вкл/выкл семантический поиск
+            :embed auto <N>         - авто-перестроение каждые N сообщений
+            :embed status           - состояние движка
+            :persona auto           - обновить персону через ИИ
+            :persona auto <N>       - авто-обновление каждые N сообщений
+            :persona auto off       - отключить авто-обновление
+            :remember               - сжать последние 10 сообщений
+            :memory migrate         - миграция JSON в SQLite
+            :memory status          - состояние долгой памяти
+            :memory search <текст>  - текстовый поиск по памяти
+            :memory auto <N>        - авто-сжатие каждые N сообщений
+            :memory purge <дни>     - удалить старые записи
+            :summarize              - сводка последних 20 сообщений
+            :import <файл>          - импорт JSON-диалогов
+            :think on|off           - размышление
+            :websearch on|off       - поиск в интернете
+            """);
             case ":mode" -> {
                 if (parts.length < 2) {
                     System.out.println("Укажи режим: api, local, manual");
@@ -439,6 +522,16 @@ public class NeuralFloppyTool1_8 {
                 } catch (NumberFormatException e) {
                     System.out.println("Некорректное значение. Укажи число от 0.0 до 2.0");
                 }
+            }
+            case ":think" -> {
+                if (parts.length < 2) { System.out.println("Используй: :think on|off"); return; }
+                thinkingEnabled = parts[1].equalsIgnoreCase("on");
+                System.out.println("Режим размышлений " + (thinkingEnabled ? "включён" : "выключен"));
+            }
+            case ":websearch" -> {
+                if (parts.length < 2) { System.out.println("Используй: :websearch on|off"); return; }
+                webSearchEnabled = parts[1].equalsIgnoreCase("on");
+                System.out.println("Поиск в интернете " + (webSearchEnabled ? "включён" : "выключен"));
             }
             case ":embed" -> {
                 if (parts.length < 2) {
@@ -493,58 +586,36 @@ public class NeuralFloppyTool1_8 {
                 startWebServer();
             }
             case ":import" -> {
-                if (parts.length < 2) {
-                    System.out.println("Укажи путь к JSON-файлу. Например: :import chat_export.json");
-                    return;
-                }
+                if (parts.length < 2) { System.out.println("Укажи путь к JSON-файлу."); return; }
                 String importPath = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
                 Path filePath = Path.of(importPath);
-                if (!Files.exists(filePath)) {
-                    System.out.println("Файл не найден: " + filePath.toAbsolutePath());
-                    return;
-                }
+                if (!Files.exists(filePath)) { System.out.println("Файл не найден."); return; }
                 System.out.println("Импортирую " + filePath.getFileName() + "...");
                 try {
                     String raw = Files.readString(filePath, StandardCharsets.UTF_8);
                     JsonElement root = GSON.fromJson(raw, JsonElement.class);
                     List<Map<String, String>> imported = new ArrayList<>();
-
                     if (root.isJsonArray()) {
-                        // Массив сообщений
                         for (JsonElement el : root.getAsJsonArray()) {
                             JsonObject obj = el.getAsJsonObject();
-                            if (obj.has("role") && obj.has("content")) {
-                                imported.add(Map.of(
-                                        "role", obj.get("role").getAsString(),
-                                        "content", obj.get("content").getAsString()
-                                ));
-                            }
+                            if (obj.has("role") && obj.has("content"))
+                                imported.add(Map.of("role", obj.get("role").getAsString(), "content", obj.get("content").getAsString()));
                         }
                     } else if (root.isJsonObject()) {
                         JsonObject obj = root.getAsJsonObject();
                         if (obj.has("messages")) {
-                            // Объект с полем "messages"
                             for (JsonElement el : obj.getAsJsonArray("messages")) {
                                 JsonObject msg = el.getAsJsonObject();
-                                if (msg.has("role") && msg.has("content")) {
-                                    imported.add(Map.of(
-                                            "role", msg.get("role").getAsString(),
-                                            "content", msg.get("content").getAsString()
-                                    ));
-                                }
+                                if (msg.has("role") && msg.has("content"))
+                                    imported.add(Map.of("role", msg.get("role").getAsString(), "content", msg.get("content").getAsString()));
                             }
                         } else if (obj.has("role") && obj.has("content")) {
-                            imported.add(Map.of(
-                                    "role", obj.get("role").getAsString(),
-                                    "content", obj.get("content").getAsString()
-                            ));
+                            imported.add(Map.of("role", obj.get("role").getAsString(), "content", obj.get("content").getAsString()));
                         }
                     }
-
                     int added = 0;
                     for (Map<String, String> m : imported) {
-                        String role = m.get("role");
-                        String content = m.get("content");
+                        String role = m.get("role"), content = m.get("content");
                         if (role == null || content == null) continue;
                         Message msg = new Message(role, content, Instant.now().getEpochSecond());
                         messages.add(msg);
@@ -553,13 +624,8 @@ public class NeuralFloppyTool1_8 {
                         added++;
                     }
                     System.out.println("Импортировано " + added + " сообщений.");
-                    if (added > 0 && embedEnabled) {
-                        System.out.println("Перестраиваю эмбеддинги...");
-                        EmbeddingEngine.build();
-                    }
-                } catch (Exception e) {
-                    System.out.println("Ошибка импорта: " + e.getMessage());
-                }
+                    if (added > 0 && embedEnabled) { System.out.println("Перестраиваю эмбеддинги..."); EmbeddingEngine.build(); }
+                } catch (Exception e) { System.out.println("Ошибка импорта: " + e.getMessage()); }
             }
             case ":persona" -> {
                 if (parts.length < 2) {
@@ -619,7 +685,6 @@ public class NeuralFloppyTool1_8 {
                         System.out.println("Авто-обновление персоны каждые " + personaAutoThreshold + " сообщ.");
                         return;
                     }
-                    // Ручной запуск
                     System.out.println("Анализирую последние диалоги и генерирую новую персону...");
                     String newPersona = autoPersona();
                     if (!newPersona.isBlank()) {
@@ -690,7 +755,6 @@ public class NeuralFloppyTool1_8 {
                     }
                     System.out.println("[DEBUG] Сжатый ответ: " + compressed);
                     if (!compressed.isBlank() && !compressed.contains("Ошибка")) {
-                        // Обрежем длинный сжатый текст, чтобы nomic-embed-text не подавился
                         String shortText = compressed.length() > 500 ? compressed.substring(0, 500) : compressed;
                         try {
                             HttpClient client = HttpClient.newHttpClient();
@@ -792,6 +856,7 @@ public class NeuralFloppyTool1_8 {
         return (double) readable / text.length() > 0.2;
     }
     static boolean ensureOllamaRunning() {
+        // Проверяем, отвечает ли Ollama
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
@@ -799,7 +864,7 @@ public class NeuralFloppyTool1_8 {
                     .GET()
                     .build();
             client.send(request, HttpResponse.BodyHandlers.ofString());
-            return true;
+            return true; // уже работает
         } catch (Exception e) {
             System.out.println("[Ollama] Не отвечает, пытаюсь запустить...");
         }
@@ -807,13 +872,13 @@ public class NeuralFloppyTool1_8 {
             String os = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb;
             if (os.contains("win")) {
+                // Windows: запускаем в отдельном окне, чтобы не висеть
                 pb = new ProcessBuilder("cmd", "/c", "start", "ollama", "serve");
             } else {
                 pb = new ProcessBuilder("ollama", "serve");
                 pb.redirectErrorStream(true);
             }
             pb.start();
-            // Ждём до 30 секунд, пока Ollama проснётся
             for (int i = 0; i < 30; i++) {
                 Thread.sleep(1000);
                 try {
@@ -890,7 +955,6 @@ public class NeuralFloppyTool1_8 {
             query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
             String result = "";
             try {
-                // Перенаправляем команду в handleCommand, но перехватываем вывод
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 PrintStream oldOut = System.out;
                 System.setOut(new PrintStream(baos, true, StandardCharsets.UTF_8));
@@ -1070,7 +1134,7 @@ public class NeuralFloppyTool1_8 {
                 }
             }
         } catch (Exception e) {
-            // Игнорируем ошибки холодного поиска
+            // лол кек чебурек
         }
 
         // 3. Объединяем: сначала активные, потом холодные
@@ -1118,7 +1182,6 @@ public class NeuralFloppyTool1_8 {
             int skipped = 0;
             for (Message msg : messages) {
                 if (msg.content.isBlank()) continue;
-                // Обрезаем длинные сообщения (модель не любит больше ~2000 символов)
                 String text = msg.content.length() > 2000 ? msg.content.substring(0, 2000) : msg.content;
                 try {
                     double[] vec = getEmbedding(client, text);
@@ -1126,7 +1189,6 @@ public class NeuralFloppyTool1_8 {
                     texts.add(text);
                 } catch (Exception e) {
                     skipped++;
-                    // Просто пропускаем проблемные сообщения
                 }
             }
             save();
@@ -1210,7 +1272,25 @@ public class NeuralFloppyTool1_8 {
             }
         }
     }
-
+    static class WebSearchEngine {
+        static String search(String query) throws Exception {
+            HttpClient client = HttpClient.newHttpClient();
+            String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.duckduckgo.com/?q=" + encoded + "&format=json&no_html=1"))
+                    .header("User-Agent", "NeuralFloppy/1.9")
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
+            JsonObject json = GSON.fromJson(resp.body(), JsonObject.class);
+            if (json.has("AbstractText") && !json.get("AbstractText").isJsonNull()) {
+                return json.get("AbstractText").getAsString();
+            } else if (json.has("RelatedTopics") && json.getAsJsonArray("RelatedTopics").size() > 0) {
+                return json.getAsJsonArray("RelatedTopics").get(0).getAsJsonObject().get("Text").getAsString();
+            }
+            return "Ничего не найдено.";
+        }
+    }
     static class Message {
         String role, content;
         long ts;
