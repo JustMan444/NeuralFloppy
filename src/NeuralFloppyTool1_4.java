@@ -1,4 +1,3 @@
-
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.*;
@@ -14,13 +13,15 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.net.InetSocketAddress;
 
-public class NeuralFloppyTool1_3 {
+public class NeuralFloppyTool1_4 {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
-    private static final String API_KEY = "sk-or-v1-..."; // твой ключ
+    private static final String API_KEY = "sk-or-v1-...."; // твой ключ
+    private static double temperature = 0.7;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
+
 
     private static List<Message> messages = new ArrayList<>();
     private static Map<String, List<Integer>> wordIndex = new HashMap<>();
@@ -36,7 +37,7 @@ public class NeuralFloppyTool1_3 {
         currentPersona = Files.readString(Path.of(PERSONA_FILE));
         buildIndex();
 
-        System.out.println("NeuralFloppy TOOL v1.3 готов. " + messages.size() + " сообщений в индексе.");
+        System.out.println("NeuralFloppy TOOL v1.4 готов. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
 
@@ -46,7 +47,7 @@ public class NeuralFloppyTool1_3 {
             String q = reader.readLine();
             if (q == null || q.isBlank()) continue;
             if (!isValidInput(q)) {
-                System.out.println("ИИ: Бро, кодировка сломалась. Повтори вопрос.");
+                System.out.println("Учитель: Бро, кодировка сломалась. Повтори вопрос.");
                 continue;
             }
 
@@ -61,7 +62,7 @@ public class NeuralFloppyTool1_3 {
             addToIndex(userMsg, messages.size() - 1);
 
             String answer = "";
-            System.out.print("\nИИ: ");
+            System.out.print("\nУчитель: ");
             switch (currentMode) {
                 case API -> answer = streaming ? askAPIStreaming(q) : askAPI(q);
                 case LOCAL -> answer = streaming ? askLocalStreaming(q) : askLocal(q);
@@ -109,7 +110,7 @@ public class NeuralFloppyTool1_3 {
                 .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
                         "model", currentModel,
                         "messages", List.of(Map.of("role", "user", "content", prompt)),
-                        "temperature", 0.7,
+                        "temperature", temperature,
                         "max_tokens", 500
                 )), StandardCharsets.UTF_8))
                 .build();
@@ -147,7 +148,7 @@ public class NeuralFloppyTool1_3 {
                 .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
                         "model", currentModel,
                         "messages", List.of(Map.of("role", "user", "content", prompt)),
-                        "temperature", 0.7,
+                        "temperature", temperature,
                         "max_tokens", 500,
                         "stream", true
                 )), StandardCharsets.UTF_8))
@@ -205,7 +206,8 @@ public class NeuralFloppyTool1_3 {
                         "model", currentModel,
                         "prompt", prompt,
                         "stream", false,
-                        "options", Map.of("num_ctx", 32768)
+                        "options", Map.of("num_ctx", 32768),
+                        "temperature",temperature
                 )), StandardCharsets.UTF_8))
                 .build();
 
@@ -267,7 +269,8 @@ public class NeuralFloppyTool1_3 {
                         "model", currentModel,
                         "prompt", prompt,
                         "stream", true,
-                        "options", Map.of("num_ctx", 32768)
+                        "options", Map.of("num_ctx", 32768),
+                        "temperature",temperature
                 )), StandardCharsets.UTF_8))
                 .build();
 
@@ -299,8 +302,13 @@ public class NeuralFloppyTool1_3 {
                 :mode api|local|manual - переключить режим
                 :model <имя>           - сменить модель
                 :persona               - показать текущую персону
+                :persona save <имя>    - сохранить текущую персону в профиль
+                :persona load <имя>    - загрузить персону из профиля
+                :persona new <имя>     - создать новый пустой профиль
                 :autosave on|off       - вкл/выкл автосохранение
                 :stream on|off         - вкл/выкл потоковый вывод
+                :status                - показать состояние Tool
+                :models                - показать список локальных моделей
                 :save                  - сохранить сессию в архив
                 :exit                  - выход
                 :web                   - открытие чата в браузере
@@ -315,6 +323,21 @@ public class NeuralFloppyTool1_3 {
                 }
                 System.out.println("Режим переключён на " + currentMode);
             }
+            case ":temperature" -> {
+                if (parts.length < 2) {
+                    System.out.println("Укажи значение от 0.0 до 2.0. Например: :temperature 0.3");
+                    return;
+                }
+                try {
+                    double temp = Double.parseDouble(parts[1]);
+                    if (temp < 0.0 || temp > 2.0) throw new NumberFormatException();
+                    temperature = temp;
+                    System.out.println("Temperature установлена на " + temperature);
+                } catch (NumberFormatException e) {
+                    System.out.println("Некорректное значение. Укажи число от 0.0 до 2.0");
+                }
+            }
+
             case ":model" -> {
                 if (parts.length < 2) { System.out.println("Укажи имя модели."); return; }
                 currentModel = parts[1];
@@ -324,11 +347,89 @@ public class NeuralFloppyTool1_3 {
                 System.out.println("Запускаю веб-интерфейс на http://localhost:8080");
                 startWebServer();
             }
-            case ":persona" -> System.out.println("Текущая персона:\n" + currentPersona);
+            case ":persona" -> {
+                if (parts.length < 2) {
+                    System.out.println("Текущая персона:\n" + currentPersona);
+                    return;
+                }
+                if (parts[1].equals("save")) {
+                    if (parts.length < 3) { System.out.println("Укажи имя профиля. Например: :persona save злой"); return; }
+                    String profileName = parts[2];
+                    Files.createDirectories(Path.of("personas"));
+                    Files.writeString(Path.of("personas/" + profileName + ".txt"), currentPersona);
+                    System.out.println("Персона сохранена как " + profileName);
+                } else if (parts[1].equals("load")) {
+                    if (parts.length < 3) { System.out.println("Укажи имя профиля. Например: :persona load философ"); return; }
+                    String profileName = parts[2];
+                    Path profilePath = Path.of("personas/" + profileName + ".txt");
+                    if (!Files.exists(profilePath)) {
+                        System.out.println("Профиль не найден: " + profilePath);
+                        return;
+                    }
+                    currentPersona = Files.readString(profilePath);
+                    Files.writeString(Path.of(PERSONA_FILE), currentPersona);
+                    System.out.println("Персона загружена из профиля " + profileName);
+                } else if (parts[1].equals("new")) {
+                    if (parts.length < 3) { System.out.println("Укажи имя новой персоны. Например: :persona new хакер"); return; }
+                    String profileName = parts[2];
+                    Path profilePath = Path.of("personas/" + profileName + ".txt");
+                    if (Files.exists(profilePath)) {
+                        System.out.println("Профиль '" + profileName + "' уже существует. Используй :persona load или save.");
+                        return;
+                    }
+                    String template = """
+            [СИСТЕМА]
+            Ты — ИИ-наставник внутри NeuralFloppy. Ты помогаешь пользователю.
+
+            [ТВОЯ РОЛЬ]
+            Опиши здесь свою роль и стиль общения.
+
+            [ПРАВИЛА ОТВЕТА]
+            1. ...
+            2. ...
+            """;
+                    Files.createDirectories(Path.of("personas"));
+                    Files.writeString(profilePath, template);
+                    System.out.println("Новая персона создана: personas/" + profileName + ".txt");
+                    System.out.println("Отредактируй этот файл, а затем загрузи его командой :persona load " + profileName);
+                }
+            }
             case ":autosave" -> {
                 if (parts.length < 2) { System.out.println("Укажи on или off"); return; }
                 autoSave = parts[1].equalsIgnoreCase("on");
                 System.out.println("Автосохранение " + (autoSave ? "включено" : "выключено"));
+            }
+            case ":status" -> {
+                System.out.println("=== Статус NeuralFloppy ===");
+                System.out.println("Режим: " + currentMode);
+                System.out.println("Модель: " + currentModel);
+                System.out.println("Автосохранение: " + (autoSave ? "вкл" : "выкл"));
+                System.out.println("Потоковый вывод: " + (streaming ? "вкл" : "выкл"));
+                System.out.println("Сообщений в индексе: " + messages.size());
+                System.out.println("Размер базы: " + Files.size(Path.of(NDJSON_FILE)) + " байт");
+                System.out.println("=========================");
+            }
+            case ":models" -> {
+                System.out.println("Локальные модели (через Ollama API):");
+                try {
+                    HttpClient client = HttpClient.newHttpClient();
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create("http://localhost:11434/api/tags"))
+                            .GET()
+                            .build();
+                    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                    JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
+                    if (json.has("models")) {
+                        json.getAsJsonArray("models").forEach(m -> {
+                            String name = m.getAsJsonObject().get("name").getAsString();
+                            System.out.println("  - " + name);
+                        });
+                    } else {
+                        System.out.println("Пустой ответ от Ollama.");
+                    }
+                } catch (Exception e) {
+                    System.out.println("Ошибка: " + e.getMessage() + ". Ollama точно запущена?");
+                }
             }
             case ":stream" -> {
                 if (parts.length < 2) { System.out.println("Укажи on или off"); return; }
@@ -353,6 +454,7 @@ public class NeuralFloppyTool1_3 {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
             server.createContext("/", new ChatHandler());
+            server.createContext("/command", new CommandHandler());
             server.createContext("/ask", new AskHandler());
             server.setExecutor(null);
             server.start();
@@ -361,46 +463,104 @@ public class NeuralFloppyTool1_3 {
             System.out.println("Ошибка запуска сервера: " + e.getMessage());
         }
     }
+    static class CommandHandler implements HttpHandler {
+        public void handle(HttpExchange exchange) throws IOException {
+            String query = exchange.getRequestURI().getQuery().split("=")[1];
+            query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
+            String result = "";
+            try {
+                // Перенаправляем команду в handleCommand, но перехватываем вывод
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                PrintStream oldOut = System.out;
+                System.setOut(new PrintStream(baos, true, StandardCharsets.UTF_8));
+                handleCommand(query);
+                System.setOut(oldOut);
+                result = baos.toString(StandardCharsets.UTF_8).trim();
+            } catch (Exception e) {
+                result = "Ошибка команды: " + e.getMessage();
+            }
+            byte[] bytes = result.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        }
+    }
 
     // Отдаёт HTML-страницу
     static class ChatHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
             String html = """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>NeuralFloppy Web</title>
-                    <style>
-                        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
-                        #chat { border: 1px solid #0f0; padding: 10px; height: 400px; overflow-y: auto; margin-bottom: 10px; }
-                        #input { width: 80%; background: #222; color: #0f0; border: 1px solid #0f0; padding: 5px; }
-                        button { background: #0f0; color: #111; border: none; padding: 6px 12px; font-weight: bold; cursor: pointer; }
-                    </style>
-                </head>
-                <body>
-                    <h1>NeuralFloppy Web UI</h1>
-                    <div id="chat"></div>
-                    <input type="text" id="input" placeholder="Твой вопрос...">
-                    <button onclick="ask()">Отправить</button>
-                    <script>
-                        function ask() {
-                            let q = document.getElementById('input').value;
-                            if (!q) return;
-                            let chat = document.getElementById('chat');
-                            chat.innerHTML += "<p><b>Ты:</b> " + q + "</p>";
-                            document.getElementById('input').value = '';
-                            fetch('/ask?q=' + encodeURIComponent(q))
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>NeuralFloppy Web UI</title>
+                <style>
+                    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+                    #chat { border: 1px solid #0f0; padding: 10px; height: 300px; overflow-y: auto; margin-bottom: 10px; }
+                    .panel { margin-bottom: 10px; }
+                    .panel select, .panel input, .panel button { background: #222; color: #0f0; border: 1px solid #0f0; padding: 4px; margin-right: 5px; }
+                    .panel button { cursor: pointer; }
+                    #input { width: 70%; background: #222; color: #0f0; border: 1px solid #0f0; padding: 5px; }
+                    button.send { background: #0f0; color: #111; border: none; padding: 6px 12px; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <h1>NeuralFloppy v1.4 Web Console</h1>
+                <div id="chat"></div>
+                <div class="panel">
+                    <label>Режим:</label>
+                    <select id="mode">
+                        <option value="api">API</option>
+                        <option value="local">LOCAL</option>
+                    </select>
+                    <label>Модель:</label>
+                    <input type="text" id="model" value="openrouter/free" size="20">
+                    <label>Temperature:</label>
+                    <input type="number" id="temp" value="0.7" min="0" max="2" step="0.1" style="width:60px">
+                    <label>Stream:</label>
+                    <input type="checkbox" id="stream" checked>
+                    <button onclick="sendCommand(':status')">Статус</button>
+                </div>
+                <input type="text" id="input" placeholder="Введи вопрос или команду (например, :status)">
+                <button class="send" onclick="send()">Отправить</button>
+                <script>
+                    function send() {
+                        let q = document.getElementById('input').value;
+                        if (!q) return;
+                        let chat = document.getElementById('chat');
+                        chat.innerHTML += "<p><b>Ты:</b> " + q + "</p>";
+                        document.getElementById('input').value = '';
+                        
+                        // Если это команда, отправляем её
+                        if (q.startsWith(':')) {
+                            fetch('/command?cmd=' + encodeURIComponent(q))
                                 .then(r => r.text())
                                 .then(a => {
-                                    chat.innerHTML += "<p><b>Учитель:</b> " + a + "</p>";
+                                    chat.innerHTML += "<p><b>Tool:</b> " + a + "</p>";
                                     chat.scrollTop = chat.scrollHeight;
                                 });
+                            return;
                         }
-                    </script>
-                </body>
-                </html>
-                """;
+                        
+                        // Иначе собираем настройки
+                        let mode = document.getElementById('mode').value;
+                        let model = document.getElementById('model').value;
+                        let temp = document.getElementById('temp').value;
+                        let stream = document.getElementById('stream').checked ? 'on' : 'off';
+                        let params = 'q=' + encodeURIComponent(q) + '&mode=' + mode + '&model=' + encodeURIComponent(model) + '&temp=' + temp + '&stream=' + stream;
+                        fetch('/ask?' + params)
+                            .then(r => r.text())
+                            .then(a => {
+                                chat.innerHTML += "<p><b>Учитель:</b> " + a + "</p>";
+                                chat.scrollTop = chat.scrollHeight;
+                            });
+                    }
+                </script>
+            </body>
+            </html>
+            """;
             byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
             exchange.sendResponseHeaders(200, bytes.length);
