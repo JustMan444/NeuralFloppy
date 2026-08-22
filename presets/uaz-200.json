@@ -1,0 +1,10 @@
+{
+  "temperature": 1.0,
+  "max_tokens": 4096,
+  "stream": true,
+  "embed_model": "mxbai-embed-large",
+  "embed_enabled": true,
+  "context_messages": 200,
+  "compress": false,
+  "adaptive": true
+}

@@ -1,0 +1,304 @@
+/* === NeuralFloppy Theme: Google AI (адаптировано из AI Mode) === */
+
+/* ---------- Базовые настройки ---------- */
+body {
+    font-family: 'Google Sans', 'Segoe UI', Roboto, sans-serif;
+    background: #f5f5f7;
+    color: #16171a;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+#app {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    box-sizing: border-box;
+}
+
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.app-title {
+    font-weight: 500;
+    font-size: 28px;
+    margin: 0;
+    color: #0a0a0a;
+    letter-spacing: -0.5px;
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #5a5c66;
+    padding: 8px;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+.icon-btn:hover {
+    background: rgba(0,0,0,0.06);
+}
+
+/* ---------- Окно чата ---------- */
+.chat-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    margin-bottom: 16px;
+    background: #ffffff;
+    border: 1px solid #dcdfe5;
+    border-radius: 24px;
+    box-shadow: 0 4px 12px rgba(60, 64, 67, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ---------- Сообщения ---------- */
+.message {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: 18px;
+    line-height: 1.5;
+    font-size: 14px;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.user-message {
+    align-self: flex-end;
+    background: #e8f0fe;
+    color: #16171a;
+    border-bottom-right-radius: 4px;
+}
+
+.assistant-message {
+    align-self: flex-start;
+    background: #f1f3f4;
+    color: #16171a;
+    border-bottom-left-radius: 4px;
+}
+
+.tool-message {
+    align-self: flex-start;
+    background: #fff3e0;
+    color: #994d00;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 13px;
+}
+
+/* ---------- Индикатор загрузки (точки) ---------- */
+.thinking-dots {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 8px 16px;
+    align-self: flex-start;
+}
+.thinking-dots span {
+    width: 8px;
+    height: 8px;
+    background: #5f6368;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+}
+.thinking-dots span:nth-child(1) { animation-delay: -0.32s; }
+.thinking-dots span:nth-child(2) { animation-delay: -0.16s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+/* ---------- Панель ввода ---------- */
+.input-area {
+    background: #ffffff;
+    border: 1px solid #dcdfe5;
+    border-radius: 24px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(60,64,67,0.1);
+}
+
+.input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.chat-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 8px 0;
+    background: transparent;
+    color: #16171a;
+}
+.chat-input::placeholder {
+    color: #80868b;
+}
+
+.send-btn {
+    background: #336ef3;
+    color: white;
+    border: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+.send-btn:hover {
+    background: #2a5cd6;
+}
+.send-btn:active {
+    transform: scale(0.95);
+}
+
+/* ---------- Панель режимов ---------- */
+.mode-selector {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: #5a5c66;
+}
+.mode-selector select,
+.mode-selector input[type="text"],
+.mode-selector input[type="number"] {
+    border: 1px solid #dcdfe5;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    background: #f8f9fa;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.mode-selector select:focus,
+.mode-selector input:focus {
+    border-color: #336ef3;
+}
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+.secondary-btn {
+    background: none;
+    border: 1px solid #dcdfe5;
+    border-radius: 8px;
+    padding: 6px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    color: #5a5c66;
+    transition: background 0.2s;
+}
+.secondary-btn:hover {
+    background: rgba(0,0,0,0.04);
+}
+
+/* ---------- Тёмная тема ---------- */
+@media (prefers-color-scheme: dark) {
+    body { background: #1f1f1f; }
+    .app-title { color: #e8eaed; }
+    .chat-container {
+        background: #303134;
+        border-color: #5f6368;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .user-message { background: #1a73e8; color: white; }
+    .assistant-message { background: #3c4043; color: #e8eaed; }
+    .tool-message { background: #5f3b00; color: #ffd699; }
+    .input-area {
+        background: #303134;
+        border-color: #5f6368;
+    }
+    .chat-input { color: #e8eaed; }
+    .mode-selector select,
+    .mode-selector input {
+        background: #3c4043;
+        border-color: #5f6368;
+        color: #e8eaed;
+    }
+    .secondary-btn { color: #e8eaed; border-color: #5f6368; }
+    .secondary-btn:hover { background: rgba(255,255,255,0.06); }
+    /* ---------- Тултипы ---------- */
+    [data-tooltip] {
+        position: relative;
+    }
+    [data-tooltip]:hover::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: #3c4043;
+        color: #fff;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        white-space: nowrap;
+        z-index: 100;
+        pointer-events: none;
+        opacity: 0;
+        animation: tooltipFadeIn 0.2s ease-out forwards;
+    }
+    @keyframes tooltipFadeIn {
+        to { opacity: 1; transform: translateX(-50%) translateY(-2px); }
+    }
+    /* Для тёмной темы */
+    @media (prefers-color-scheme: dark) {
+        [data-tooltip]:hover::after {
+            background: #e8eaed;
+            color: #1f1f1f;
+        }
+    }
+
+    /* ---------- Анимация отправки (пульсация кнопки) ---------- */
+    .send-btn:active {
+        transform: scale(0.92);
+    }
+    .sending .send-btn {
+        animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(51, 110, 243, 0.5); }
+        70% { box-shadow: 0 0 0 12px rgba(51, 110, 243, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(51, 110, 243, 0); }
+    }
+
+    /* Градиентная вспышка на поле ввода (как в AI Mode) */
+    @keyframes inputGlow {
+        0% { border-color: #336ef3; box-shadow: 0 0 0 2px rgba(51,110,243,0.2); }
+        50% { border-color: #8ab4f8; box-shadow: 0 0 0 4px rgba(138,180,248,0.3); }
+        100% { border-color: #336ef3; box-shadow: 0 0 0 2px rgba(51,110,243,0.2); }
+    }
+    .chat-input:focus {
+        animation: inputGlow 2s ease-in-out;
+    }
+}
