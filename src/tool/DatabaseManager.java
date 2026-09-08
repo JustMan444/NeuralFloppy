@@ -1,6 +1,6 @@
-import java.io.*;
+package tool;
+
 import java.nio.ByteBuffer;
-import java.nio.file.*;
 
 import java.sql.*;
 import java.util.*;

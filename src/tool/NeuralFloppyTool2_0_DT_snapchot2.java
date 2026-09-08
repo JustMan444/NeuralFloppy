@@ -1,3 +1,5 @@
+package tool;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.Gson;
@@ -16,10 +18,11 @@ import java.util.stream.*;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+
 import java.net.InetSocketAddress;
 import java.net.URLEncoder;
 
-public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
+public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
@@ -61,8 +64,13 @@ public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
     private static int memoryAutoThreshold = 0;
     private static int memoryNewCount = 0;
 
+    private static ModuleContext moduleContext;
+
     public static void main(String[] args) throws Exception {
         ensureDirectoriesAndFiles();
+        ModuleLoader.loadAll(Path.of("modules"));
+
+        ModuleLoader.register(new HelloModule());
         DatabaseManager.initDatabase();
 
         try {
@@ -108,9 +116,9 @@ public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
             EmbeddingEngine.load();
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
-        NeuralFloppyTool1_9_3 app = new NeuralFloppyTool1_9_3();
+        NeuralFloppyTool2_0_DT_snapchot2 app = new NeuralFloppyTool2_0_DT_snapchot2();
         GameAPI.setCore(app);
-
+        ModuleContext moduleContext = new MainModuleSystem(app);
         System.out.println("NeuralFloppy TOOL V1.9.3/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
@@ -778,6 +786,40 @@ public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
             }
         }
     }
+    @Override
+    public List<String> findContext(String query) {
+        return searchContext(query, contextSize);
+    }
+
+    @Override
+    public void saveMessage(String role, String content) {
+        try {
+            Message msg = new Message(role, content, Instant.now().getEpochSecond());
+            messages.add(msg);
+            if (autoSave) appendToNdjson(msg);
+            try {
+                DatabaseManager.saveMessageToDb(role, content, msg.ts);
+            } catch (SQLException e) {
+                System.out.println("Ошибка записи в БД: " + e.getMessage());
+            }
+            addToIndex(msg, messages.size() - 1);
+        } catch (Exception e) {
+            System.out.println("Ошибка сохранения из модуля: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public String callLLM(String prompt, String mode) {
+        try {
+            if ("local".equalsIgnoreCase(mode)) {
+                return askLocal(prompt);
+            } else {
+                return askAPI(prompt);
+            }
+        } catch (Exception e) {
+            return "LLM ошибка: " + e.getMessage();
+        }
+    }
 
     // ================== КОМАНДЫ ==================
     static void handleCommand(String cmd) throws IOException {
@@ -837,6 +879,9 @@ public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
                     :test                   - тестирование всех систем
                     :clear                  - очистить консоль
                     :clear session          - сбрасывание активного контекста 
+                    :modules
+                    :module enable <hello>
+                    :module disable <hello>
                    
             """); // :NeuralFloppy           -узнать новости проекта
                 } else {
@@ -940,7 +985,32 @@ public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
                 System.out.println("Веб-сервер (порт 8080): " + (webOk ? "OK" : "НЕ ЗАПУЩЕН"));
                 System.out.println("=== Диагностика завершена ===");
             }
-
+            case ":modules" -> {
+                List<String> names = ModuleLoader.listNames();
+                if (names.isEmpty()) {
+                    System.out.println("Модули не найдены.");
+                } else {
+                    System.out.println("Доступные модули:");
+                    for (String name : names) {
+                        System.out.println("  - " + name);
+                    }
+                }
+            }
+            case ":module" -> {
+                if (parts.length < 3) {
+                    System.out.println("Используй: :module enable <имя> | :module disable <имя>");
+                    return;
+                }
+                String action = parts[1];
+                String name = parts[2];
+                if (action.equalsIgnoreCase("enable")) {
+                    ModuleLoader.enable(name, moduleContext);
+                } else if (action.equalsIgnoreCase("disable")) {
+                    ModuleLoader.disable(name);
+                } else {
+                    System.out.println("Неизвестное действие. Используй enable или disable.");
+                }
+            }
             case ":game" -> {
                 if (parts.length < 2) {
                     System.out.println("Используй: :game off | :game status | :game list | :game memory <колонка> | :game clear <колонка> | :game export <колонка>");
@@ -996,7 +1066,16 @@ public class NeuralFloppyTool1_9_3 implements NeuralFloppyCore {
                 silentMode = parts[1].equalsIgnoreCase("on");
                 System.out.println("Тихий режим (без генерации ответа): " + (silentMode ? "включён" : "выключен"));
             }
+            case ":Neuralfloppy" -> {
+                if (parts.length < 2) {
+                    System.out.println("текущая версия NeuralFloppy : 2.0_DT_snapchot2 experimental beta version");
+                    return;
+                }
+                if(parts[1].equalsIgnoreCase("news")) {
+                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : первое обновление добавлена поддержка базовых модулей \n подоробнее об моддинге можно вскоре ознакомится в специальном файле либо по ссылке гитхаб");
+                }
 
+            }
             case ":compress" -> {
                 if (parts.length < 2) {
                     System.out.println("Используй: :compress on|off");
