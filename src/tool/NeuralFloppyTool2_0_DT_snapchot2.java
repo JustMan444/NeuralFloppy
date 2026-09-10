@@ -18,7 +18,7 @@ import java.util.stream.*;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
-
+import tool.CommandHandler;
 import java.net.InetSocketAddress;
 import java.net.URLEncoder;
 
@@ -66,12 +66,18 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
 
     private static ModuleContext moduleContext;
 
+    private static String searchEngine = "classic"; // classic | vec | hybrid | manual
+
     public static void main(String[] args) throws Exception {
         ensureDirectoriesAndFiles();
         ModuleLoader.loadAll(Path.of("modules"));
 
         ModuleLoader.register(new HelloModule());
         DatabaseManager.initDatabase();
+        VecEngine.init();
+        if (VecEngine.isAvailable()) {
+            VecEngine.createTableIfNeeded(768); // размерность текущей модели
+        }
 
         try {
             List<String[]> dbMessages = DatabaseManager.loadMessagesFromDb();
@@ -118,7 +124,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         }
         NeuralFloppyTool2_0_DT_snapchot2 app = new NeuralFloppyTool2_0_DT_snapchot2();
         GameAPI.setCore(app);
-        ModuleContext moduleContext = new MainModuleSystem(app);
+        moduleContext = new MainModuleSystem(app);
         System.out.println("NeuralFloppy TOOL V1.9.3/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
@@ -824,6 +830,16 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     // ================== КОМАНДЫ ==================
     static void handleCommand(String cmd) throws IOException {
         String[] parts = cmd.split("\\s+");
+        // Пытаемся найти команду от модуля
+        Map<String, CommandHandler> moduleCommands = ModuleLoader.getCommandRegistry();
+        if (!moduleCommands.isEmpty()) {
+            for (Map.Entry<String, CommandHandler> entry : moduleCommands.entrySet()) {
+                if (parts[0].equalsIgnoreCase(entry.getKey())) {
+                    entry.getValue().execute(parts);
+                    return;
+                }
+            }
+        }
         switch (parts[0]) {
             case ":help" -> {
                 if (parts.length > 1 && parts[1].equalsIgnoreCase("all")) {
@@ -882,6 +898,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :modules
                     :module enable <hello>
                     :module disable <hello>
+                    :search engine classic|vec|hybrid  - выбор движка поиска (крайне не стабильно опасно для использования)
+                    :vec                                - статус sqlite-vec (безопастно не стабильно)
                    
             """); // :NeuralFloppy           -узнать новости проекта
                 } else {
@@ -985,6 +1003,26 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 System.out.println("Веб-сервер (порт 8080): " + (webOk ? "OK" : "НЕ ЗАПУЩЕН"));
                 System.out.println("=== Диагностика завершена ===");
             }
+            case ":search" -> {
+                if (parts.length < 3 || !parts[1].equalsIgnoreCase("engine")) {
+                    System.out.println("Используй: :search engine classic|vec|hybrid|manual");
+                    System.out.println("Доступно: classic, vec" + (VecEngine.isAvailable() ? "" : " (vec недоступен)"));
+                    return;
+                }
+                String engine = parts[2].toLowerCase();
+                if (engine.equals("vec") && !VecEngine.isAvailable()) {
+                    System.out.println("sqlite-vec не загружен. Движок vec недоступен.");
+                    return;
+                }
+                searchEngine = engine;
+                System.out.println("Движок поиска: " + searchEngine);
+            }
+            case ":vec" -> {
+                System.out.println("sqlite-vec: " + (VecEngine.isAvailable() ? "OK" : "недоступен"));
+                if (VecEngine.getLastError() != null) {
+                    System.out.println("Последняя ошибка: " + VecEngine.getLastError());
+                }
+            }
             case ":modules" -> {
                 List<String> names = ModuleLoader.listNames();
                 if (names.isEmpty()) {
@@ -1066,13 +1104,13 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 silentMode = parts[1].equalsIgnoreCase("on");
                 System.out.println("Тихий режим (без генерации ответа): " + (silentMode ? "включён" : "выключен"));
             }
-            case ":Neuralfloppy" -> {
+            case ":NeuralFloppy" -> {
                 if (parts.length < 2) {
                     System.out.println("текущая версия NeuralFloppy : 2.0_DT_snapchot2 experimental beta version");
                     return;
                 }
                 if(parts[1].equalsIgnoreCase("news")) {
-                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : первое обновление добавлена поддержка базовых модулей \n подоробнее об моддинге можно вскоре ознакомится в специальном файле либо по ссылке гитхаб");
+                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : второе обновление добавлена поддержка вшитого векторного пространства в БД для огромной скорости \n добавлены команда для будущего управления движками включая старые версии NeuralFloppy \n создан первый exe файл");
                 }
 
             }
@@ -1725,7 +1763,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
             server.createContext("/", new ChatHandler());
-            server.createContext("/command", new CommandHandler());
+            server.createContext("/command", new WebCommandHandler());
             server.createContext("/ask", new AskHandler());
             server.createContext("/ask-stream", new AskStreamHandler());
 
@@ -1741,7 +1779,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             System.out.println("Ошибка запуска сервера: " + e.getMessage());
         }
     }
-    static class CommandHandler implements HttpHandler {
+    static class WebCommandHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
             String query = exchange.getRequestURI().getQuery().split("=")[1];
             query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
@@ -1956,6 +1994,33 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     static List<String> searchContext(String query, int topN) {
         List<String> activeResults = new ArrayList<>();
 
+        // 0. Поиск через sqlite-vec (если включён движок vec или hybrid)
+        if (("vec".equals(searchEngine) || "hybrid".equals(searchEngine)) && VecEngine.isAvailable()) {
+            try {
+                HttpClient client = HttpClient.newHttpClient();
+                double[] queryVec = EmbeddingEngine.getEmbedding(client, query);
+                List<Integer> ids = VecEngine.search(queryVec, topN);
+                if (!ids.isEmpty()) {
+                    for (int id : ids) {
+                        if (id >= 0 && id < messages.size()) {
+                            activeResults.add(messages.get(id).content);
+                        }
+                    }
+                    if (!activeResults.isEmpty()) {
+                        // Возвращаем vec-результаты сразу, без классического перебора
+                        // Но оставляем возможность дополнить холодной памятью ниже
+                        // (если нужно, можно убрать этот early-return)
+                        List<String> cold = searchColdMemory(query, 3);
+                        activeResults.addAll(cold);
+                        return activeResults.stream().distinct().limit(topN).collect(Collectors.toList());
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("[VEC] Ошибка поиска: " + e.getMessage());
+                // fallback на классический поиск ниже
+            }
+        }
+
         // 1. Поиск в активном индексе (эмбеддинги или wordIndex)
         if (embedEnabled && !EmbeddingEngine.vectors.isEmpty()) {
             try {
@@ -1984,12 +2049,22 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         }
 
         // 2. Поиск в долгой (холодной) памяти
+        List<String> coldResults = searchColdMemory(query, 3);
+
+        // 3. Объединяем: сначала активные, потом холодные
+        List<String> combined = new ArrayList<>(activeResults);
+        combined.addAll(coldResults);
+        return combined.stream().distinct().limit(topN).collect(Collectors.toList());
+    }
+
+    // Вспомогательный метод для холодной памяти (вынес, чтобы не дублировать)
+    static List<String> searchColdMemory(String query, int topN) {
         List<String> coldResults = new ArrayList<>();
         try {
             if (embedEnabled) {
                 HttpClient client = HttpClient.newHttpClient();
                 double[] queryVec = EmbeddingEngine.getEmbedding(client, query);
-                List<MemoryManager.MemoryEntry> cold = MemoryManager.search(queryVec, 3);
+                List<MemoryManager.MemoryEntry> cold = MemoryManager.search(queryVec, topN);
                 for (MemoryManager.MemoryEntry e : cold) {
                     coldResults.add("[Из долгой памяти]: " + e.text);
                 }
@@ -1997,11 +2072,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         } catch (Exception e) {
             // Игнорируем ошибки холодного поиска
         }
-
-        // 3. Объединяем: сначала активные, потом холодные
-        List<String> combined = new ArrayList<>(activeResults);
-        combined.addAll(coldResults);
-        return combined.stream().distinct().limit(topN).collect(Collectors.toList());
+        return coldResults;
     }
 
     static String buildPrompt(String question) throws IOException {
@@ -2051,10 +2122,18 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         static void build() throws Exception {
             vectors.clear();
             texts.clear();
+
+            // Пересоздаём vec-таблицу под текущую размерность, если vec доступен
+            if (VecEngine.isAvailable()) {
+                VecEngine.rebuildTable(getEmbeddingDimension());
+            }
+
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
                     .build();
             int skipped = 0;
+            int i = 0; // <-- счётчик успешно добавленных эмбеддингов
+
             for (Message msg : messages) {
                 if (msg.content.isBlank()) continue;
                 // Обрезаем до 500 символов, чтобы точно влезало в 2048 токенов
@@ -2063,6 +2142,12 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     double[] vec = getEmbedding(client, text);
                     vectors.add(vec);
                     texts.add(text);
+
+                    // Пишем в sqlite-vec, если движок доступен
+                    if (VecEngine.isAvailable()) {
+                        VecEngine.insert(i, vec);
+                    }
+                    i++; // увеличиваем только при успехе
                 } catch (Exception e) {
                     skipped++;
                     System.err.println("[EMBED] Ошибка для фрагмента: " + e.getMessage());
