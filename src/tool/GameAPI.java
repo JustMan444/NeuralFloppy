@@ -120,7 +120,7 @@ public class GameAPI {
                 // Режим быстрого, детерминированного поиска без LLM
                 switch (format) {
                     case "observer":
-                        SuperFastEngine.observe(column, requestJson);
+                        core.saveToColumn(column, requestJson.toString(), "observer");
                         response.addProperty("status", "recorded");
                         break;
                     case "action-only":

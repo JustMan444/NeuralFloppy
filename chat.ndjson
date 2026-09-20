@@ -14,3 +14,20 @@
 {"role":"USER","content":"Это тест vec","ts":1789073122}
 {"role":"USER","content":"это тест vec","ts":1789073196}
 {"role":"USER","content":"test vec engine","ts":1789121106}
+{"role":"USER","content":"    public void saveToColumn(String column, String data, String format) {","ts":1789910789}
+{"role":"USER","content":"        try {","ts":1789910789}
+{"role":"USER","content":"            String storageMode \u003d StorageManager.getMode();","ts":1789910789}
+{"role":"USER","content":"            String fileName \u003d \"chat_\" + column + \".ndjson\";","ts":1789910789}
+{"role":"USER","content":"            Message msg \u003d new Message(\"SYSTEM\", data, Instant.now().getEpochSecond());","ts":1789910789}
+{"role":"USER","content":"            String line \u003d GSON.toJson(msg) + \"\\n\";","ts":1789910789}
+{"role":"USER","content":"            Path debugPath \u003d Path.of(fileName);","ts":1789910789}
+{"role":"USER","content":"            System.out.println(\"[COLUMN] Пишу в: \" + debugPath.toAbsolutePath());","ts":1789910790}
+{"role":"USER","content":"            Files.writeString(debugPath, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);","ts":1789910790}
+{"role":"USER","content":"            Files.writeString(Path.of(fileName), line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);","ts":1789910790}
+{"role":"USER","content":"            if (storageMode.equals(\"long\") || storageMode.equals(\"archive\")) {","ts":1789910790}
+{"role":"USER","content":"                MemoryManager.addCompressed(data, null);","ts":1789910790}
+{"role":"USER","content":"            }","ts":1789910790}
+{"role":"USER","content":"        } catch (Exception e) {","ts":1789910790}
+{"role":"USER","content":"            System.err.println(\"[GameAPI] Ошибка сохранения в колонку \" + column + \": \" + e.getMessage());","ts":1789910790}
+{"role":"USER","content":"        }","ts":1789910790}
+{"role":"USER","content":"    }curl -X POST http://localhost:8080/api/game -H \"Content-Type: application/json\" -d \"{\\\"column\\\":\\\"test_col\\\",\\\"type\\\":\\\"q-agent\\\",\\\"format\\\":\\\"observer\\\",\\\"state\\\":{\\\"a\\\":1},\\\"action\\\":\\\"test\\\",\\\"reward\\\":1.0}\"","ts":1789910805}

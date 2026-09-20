@@ -1477,6 +1477,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         bg.start();
                         System.out.println("Эмбеддинги строятся в фоне.");
                     }
+
                     case "model" -> {
                         if (parts.length < 3) {
                             System.out.println("Укажи модель. Например: :embed model nomic-embed-text");
@@ -2456,6 +2457,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             String fileName = "chat_" + column + ".ndjson";
             Message msg = new Message("SYSTEM", data, Instant.now().getEpochSecond());
             String line = GSON.toJson(msg) + "\n";
+            Path debugPath = Path.of(fileName);
+            Files.writeString(debugPath, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             Files.writeString(Path.of(fileName), line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
 
             if (storageMode.equals("long") || storageMode.equals("archive")) {
