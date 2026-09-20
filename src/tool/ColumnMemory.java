@@ -72,6 +72,7 @@ public class ColumnMemory {
         return list;
     }
 
+
     // ================== ПОИСК ==================
 
     /**
@@ -170,5 +171,46 @@ public class ColumnMemory {
             }
         }
         System.out.println("[COLUMN] Построено " + i + " эмбеддингов для '" + columnName + "'. Пропущено: " + skipped);
+    }
+    // ================== ЭПИЗОДЫ ==================
+
+    public static List<Episode> loadEpisodes(String column, int limit) throws Exception {
+        List<Episode> list = new ArrayList<>();
+        Path path = Path.of("chat_" + column + ".ndjson");
+        if (!Files.exists(path)) return list;
+
+        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+        int start = Math.max(0, lines.size() - limit);
+        for (int i = start; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line.isBlank()) continue;
+            try {
+                JsonObject obj = GSON.fromJson(line, JsonObject.class);
+                // Формат observer: state/action/reward/next_state лежат либо в state, либо в корне
+                String state = obj.has("state") ? obj.get("state").toString() : "{}";
+                String action = obj.has("action") ? obj.get("action").getAsString() : "";
+                double reward = obj.has("reward") ? obj.get("reward").getAsDouble() : 0.0;
+                String nextState = obj.has("next_state") ? obj.get("next_state").toString() : "{}";
+                long ts = obj.has("ts") ? obj.get("ts").getAsLong() : 0;
+                list.add(new Episode(state, action, reward, nextState, ts));
+            } catch (Exception e) { /* skip */ }
+        }
+        return list;
+    }
+
+    public static void saveEpisode(String column, Episode episode) throws Exception {
+        Path path = Path.of("chat_" + column + ".ndjson");
+        JsonObject obj = new JsonObject();
+        obj.addProperty("role", "SYSTEM");
+        obj.add("state", GSON.fromJson(episode.state, JsonObject.class));
+        obj.addProperty("action", episode.action);
+        obj.addProperty("reward", episode.reward);
+        if (episode.nextState != null) {
+            obj.add("next_state", GSON.fromJson(episode.nextState, JsonObject.class));
+        }
+        obj.addProperty("ts", episode.ts);
+        String line = GSON.toJson(obj) + "\n";
+        Files.writeString(path, line, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 }

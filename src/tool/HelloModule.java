@@ -67,6 +67,16 @@ public class HelloModule implements Module {
                             String answer = ctx.callLLM(prompt, "local");
                             ctx.log("[HELLO] Ответ LLM: " + answer);
                         }
+                        case "test" -> {
+                            ctx.log("Колонки: " + ctx.listColumns());
+                            ctx.createColumn("test_module_col");
+                            ctx.saveEpisode("test_module_col",
+                                    new Episode("{\"hp\":30}", "attack", 1.0, "{\"hp\":25}", System.currentTimeMillis()));
+                            List<Episode> eps = ctx.getEpisodes("test_module_col", 10);
+                            ctx.log("Эпизодов: " + eps.size());
+                            double q = ctx.getQValue("test_module_col", "{\"hp\":30}", "attack");
+                            ctx.log("Q-значение: " + q);
+                        }
                         default -> ctx.log("[HELLO] Неизвестная подкоманда: " + sub);
                     }
                 }
@@ -80,4 +90,5 @@ public class HelloModule implements Module {
         }
         enabled = false;
     }
+
 }

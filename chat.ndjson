@@ -31,3 +31,4 @@
 {"role":"USER","content":"            System.err.println(\"[GameAPI] Ошибка сохранения в колонку \" + column + \": \" + e.getMessage());","ts":1789910790}
 {"role":"USER","content":"        }","ts":1789910790}
 {"role":"USER","content":"    }curl -X POST http://localhost:8080/api/game -H \"Content-Type: application/json\" -d \"{\\\"column\\\":\\\"test_col\\\",\\\"type\\\":\\\"q-agent\\\",\\\"format\\\":\\\"observer\\\",\\\"state\\\":{\\\"a\\\":1},\\\"action\\\":\\\"test\\\",\\\"reward\\\":1.0}\"","ts":1789910805}
+{"role":"SYSTEM","content":"HelloModule успешно включён.","ts":1789916337}

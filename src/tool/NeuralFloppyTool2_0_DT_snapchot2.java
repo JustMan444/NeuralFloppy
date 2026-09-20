@@ -2495,4 +2495,128 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         }
         return "LLM analysis not available";
     }
+    // ================== ЭПИЗОДЫ ==================
+
+    @Override
+    public List<Episode> getEpisodes(String column, int limit) {
+        try {
+            return ColumnMemory.loadEpisodes(column, limit);
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка getEpisodes: " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    @Override
+    public void saveEpisode(String column, Episode episode) {
+        try {
+            ColumnMemory.saveEpisode(column, episode);
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка saveEpisode: " + e.getMessage());
+        }
+    }
+
+// ================== ВЕКТОРЫ ==================
+
+    @Override
+    public double[] getEmbedding(String text) {
+        try {
+            java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+            return EmbeddingEngine.getEmbedding(client, text);
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка getEmbedding: " + e.getMessage());
+            return new double[0];
+        }
+    }
+
+    @Override
+    public List<VecMatch> searchByVector(double[] queryVec, String column, int topK) {
+        List<VecMatch> result = new ArrayList<>();
+        try {
+            if (!VecEngine.isAvailable()) return result;
+            String tableName = column == null ? "vec_items" : "vec_items_" + column;
+            List<Integer> ids = VecEngine.search(tableName, queryVec, topK);
+            for (int id : ids) {
+                result.add(new VecMatch(id, 0.0, Map.of()));
+            }
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка searchByVector: " + e.getMessage());
+        }
+        return result;
+    }
+
+    @Override
+    public void saveVector(String column, double[] vec, Map<String, Object> metadata) {
+        try {
+            if (!VecEngine.isAvailable()) return;
+            String tableName = column == null ? "vec_items" : "vec_items_" + column;
+            int id = (int) (System.currentTimeMillis() % Integer.MAX_VALUE);
+            VecEngine.insert(tableName, id, vec);
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка saveVector: " + e.getMessage());
+        }
+    }
+
+// ================== Q-ТАБЛИЦА ==================
+
+    @Override
+    public double getQValue(String column, String stateKey, String action) {
+        return GameAPI.SuperFastEngine.getQValue(column, stateKey, action);
+    }
+
+    @Override
+    public void setQValue(String column, String stateKey, String action, double value) {
+        GameAPI.SuperFastEngine.setQValue(column, stateKey, action, value);
+    }
+
+    @Override
+    public Map<String, Double> getQValues(String column, String stateKey) {
+        return GameAPI.SuperFastEngine.getQValues(column, stateKey);
+    }
+
+// ================== КОЛОНКИ ==================
+
+    @Override
+    public List<String> listColumns() {
+        List<String> result = new ArrayList<>();
+        try (var files = Files.list(Path.of("."))) {
+            files.filter(p -> p.getFileName().toString().startsWith("chat_"))
+                    .filter(p -> p.getFileName().toString().endsWith(".ndjson"))
+                    .forEach(p -> {
+                        String name = p.getFileName().toString()
+                                .replace("chat_", "")
+                                .replace(".ndjson", "");
+                        result.add(name);
+                    });
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка listColumns: " + e.getMessage());
+        }
+        return result;
+    }
+
+    @Override
+    public void createColumn(String name) {
+        try {
+            Path path = Path.of("chat_" + name + ".ndjson");
+            if (!Files.exists(path)) {
+                Files.createFile(path);
+                System.out.println("[CORE] Создана колонка: " + name);
+            }
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка createColumn: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void clearColumn(String name) {
+        try {
+            Path path = Path.of("chat_" + name + ".ndjson");
+            if (Files.exists(path)) {
+                Files.delete(path);
+                System.out.println("[CORE] Колонка очищена: " + name);
+            }
+        } catch (Exception e) {
+            System.err.println("[CORE] Ошибка clearColumn: " + e.getMessage());
+        }
+    }
 }

@@ -281,6 +281,21 @@ public class GameAPI {
                 this.timestamp = timestamp;
             }
         }
+        // === Q-таблица: доступ для ModuleContext ===
+
+        public static double getQValue(String column, String stateKey, String action) {
+            Map<String, Double> actions = qTable.get(stateKey);
+            return actions == null ? 0.0 : actions.getOrDefault(action, 0.0);
+        }
+
+        public static void setQValue(String column, String stateKey, String action, double value) {
+            qTable.computeIfAbsent(stateKey, k -> new ConcurrentHashMap<>()).put(action, value);
+        }
+
+        public static Map<String, Double> getQValues(String column, String stateKey) {
+            Map<String, Double> actions = qTable.get(stateKey);
+            return actions == null ? Map.of() : new HashMap<>(actions);
+        }
     }
 
     // -------------------------- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ --------------------------
