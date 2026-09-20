@@ -76,7 +76,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         DatabaseManager.initDatabase();
         VecEngine.init();
         if (VecEngine.isAvailable()) {
-            VecEngine.createTableIfNeeded(768); // размерность текущей модели
+            EmbeddingEngine.getEmbeddingDimension(); // размерность текущей модели
             VecEngine.rebuildTable(EmbeddingEngine.getEmbeddingDimension());
         }
 
@@ -306,9 +306,93 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         // Создаём пустые файлы тем и пресетов, если их нет (можно заменить на создание пустых JSON)
         // Пресеты уже создаются через команды, но на всякий случай создадим папку
     }
+    static String askLocal(String question, String column) throws Exception {
+        if (column == null) return askLocal(question);
 
+        ensureOllamaRunning();
+        String persona = currentPersona;
+        List<String> ctx = searchContext(question, contextSize, column);
+        String context = String.join("\n---\n", ctx);
+        String prompt = String.format("""
+        %s
+
+        Вот история твоего общения с учеником:
+        %s
+
+        Ученик спросил: %s
+        Ответь как тот самый наставник:""", persona, context, question);
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:11434/api/generate"))
+                .header("Content-Type", "application/json; charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
+                        "model", currentModel,
+                        "prompt", prompt,
+                        "stream", false,
+                        "options", Map.of("num_ctx", 32768),
+                        "temperature", temperature
+                )), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        String body = response.body();
+        JsonObject json = GSON.fromJson(body, JsonObject.class);
+        if (json.has("response")) {
+            JsonElement resp = json.get("response");
+            if (resp != null && !resp.isJsonNull()) return resp.getAsString();
+            return "Локальная модель вернула пустой ответ.";
+        }
+        return "Ошибка Ollama: " + body;
+    }
+    static String askAPI(String question, String column) throws Exception {
+        if (column == null) return askAPI(question);
+
+        String persona = currentPersona;
+        List<String> ctx = searchContext(question, contextSize, column);
+        String context = String.join("\n---\n", ctx);
+        String prompt = String.format("""
+        %s
+
+        Вот история твоего общения с учеником:
+        %s
+
+        Ученик спросил: %s
+        Ответь как тот самый наставник:""", persona, context, question);
+
+        // Дальше — тот же код запроса к API, что и в askAPI(question).
+        // Чтобы не дублировать, просто временно выставим контекст через флаг.
+        // Но проще всего — скопировать блок ниже (это честнее, чем плодить хаки).
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://openrouter.ai/api/v1/chat/completions"))
+                .header("Authorization", "Bearer " + API_KEY)
+                .header("HTTP-Referer", "http://localhost")
+                .header("X-Title", "NeuralFloppy")
+                .header("Content-Type", "application/json; charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
+                        "model", currentModel,
+                        "messages", List.of(Map.of("role", "user", "content", prompt)),
+                        "temperature", temperature,
+                        "max_tokens", 500
+                )), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        String body = response.body();
+        JsonObject json = GSON.fromJson(body, JsonObject.class);
+        if (json.has("choices") && json.getAsJsonArray("choices").size() > 0) {
+            JsonObject message = json.getAsJsonArray("choices").get(0)
+                    .getAsJsonObject().getAsJsonObject("message");
+            JsonElement content = message.get("content");
+            if (content != null && !content.isJsonNull()) return content.getAsString();
+            return "Модель не ответила.";
+        }
+        return "Ошибка API: " + body;
+    }
     // ================== API ==================
     static String askAPI(String question) throws Exception {
+
         String persona = currentPersona;
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
@@ -815,6 +899,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         }
     }
 
+
     @Override
     public String callLLM(String prompt, String mode) {
         try {
@@ -827,6 +912,22 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             return "LLM ошибка: " + e.getMessage();
         }
     }
+    @Override
+    public String askLLM(String query, JsonObject state, String column) {
+        try {
+            if (currentMode == Mode.API) return askAPI(query, column);
+            else if (currentMode == Mode.LOCAL) return askLocal(query, column);
+        } catch (Exception e) {
+            System.err.println("[GameAPI] Ошибка LLM: " + e.getMessage());
+        }
+        return "LLM not available";
+    }
+
+    // Старый оставь, но пусть делегирует:
+//    @Override
+//    public String askLLM(String query, JsonObject state) {
+//        return askLLM(query, state, null);
+//    }
 
     // ================== КОМАНДЫ ==================
     static void handleCommand(String cmd) throws IOException {
@@ -1996,7 +2097,12 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         String line = GSON.toJson(msg) + "\n";
         Files.writeString(Path.of(NDJSON_FILE), line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
+    static List<String> searchContext(String query, int topN, String column) {
+        if (column == null) return searchContext(query, topN);
 
+        // Делегируем в ColumnMemory — она уже умеет и vec, и fallback
+        return new ColumnMemory(column).search(query, topN, searchEngine);
+    }
     static List<String> searchContext(String query, int topN) {
         List<String> activeResults = new ArrayList<>();
 

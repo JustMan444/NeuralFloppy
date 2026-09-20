@@ -65,6 +65,7 @@ public class GameAPI {
         String column = requestJson.has("column") ? requestJson.get("column").getAsString() : core.getDefaultColumn();
         String format = requestJson.has("format") ? requestJson.get("format").getAsString() : null;
 
+
         // 4. Валидация
         if (column == null || column.isBlank()) {
             sendError(exchange, 400, "Column is required.");
@@ -129,7 +130,7 @@ public class GameAPI {
                         response = SuperFastEngine.query(column, requestJson);
                         break;
                     case "chat":
-                        String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson);
+                        String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson, column);
                         response.addProperty("message", llmAnswer);
                         break;
                     default:
@@ -149,7 +150,7 @@ public class GameAPI {
                         response.addProperty("status", "recorded");
                         break;
                     default:
-                        String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson);
+                        String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson, column);
                         core.saveToColumn(column, llmAnswer, format);
                         response.addProperty("message", llmAnswer);
                         break;

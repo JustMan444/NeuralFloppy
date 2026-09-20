@@ -14,4 +14,5 @@ public interface NeuralFloppyCore {
     List<String> findContext(String query);
     void saveMessage(String role, String content);
     String callLLM(String prompt, String mode);
+    String askLLM(String query, JsonObject state, String column);
 }
