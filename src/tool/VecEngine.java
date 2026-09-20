@@ -47,23 +47,25 @@ public class VecEngine {
     public static boolean isAvailable() { return available; }
     public static String getLastError() { return lastError; }
 
-    public static void rebuildTable(int dimension) {
+    public static void rebuildTable(String tableName, int dimension) {
         if (!available) return;
+        if (!isValidTableName(tableName)) return;
         try (Statement stmt = getConnection().createStatement()) {
-            stmt.execute("DROP TABLE IF EXISTS vec_items");
-            stmt.execute("CREATE VIRTUAL TABLE vec_items USING vec0(" +
+            stmt.execute("DROP TABLE IF EXISTS " + tableName);
+            stmt.execute("CREATE VIRTUAL TABLE " + tableName + " USING vec0(" +
                     "content_id INTEGER PRIMARY KEY, " +
                     "embedding FLOAT[" + dimension + "])");
-            System.out.println("[VEC] Таблица vec_items пересоздана (dim=" + dimension + ")");
+            System.out.println("[VEC] Таблица " + tableName + " пересоздана (dim=" + dimension + ")");
         } catch (Exception e) {
             System.out.println("[VEC] Ошибка пересоздания: " + e.getMessage());
         }
     }
 
-    public static void insert(int contentId, double[] vec) {
+    public static void insert(String tableName, int contentId, double[] vec) {
         if (!available) return;
+        if (!isValidTableName(tableName)) return;
         try (PreparedStatement ps = getConnection().prepareStatement(
-                "INSERT OR REPLACE INTO vec_items (content_id, embedding) VALUES (?, ?)")) {
+                "INSERT OR REPLACE INTO " + tableName + " (content_id, embedding) VALUES (?, ?)")) {
             ByteBuffer buf = ByteBuffer.allocate(vec.length * 4);
             for (double d : vec) buf.putFloat((float) d);
             ps.setInt(1, contentId);
@@ -74,11 +76,12 @@ public class VecEngine {
         }
     }
 
-    public static List<Integer> search(double[] queryVec, int topK) {
+    public static List<Integer> search(String tableName, double[] queryVec, int topK) {
         List<Integer> result = new ArrayList<>();
         if (!available) return result;
+        if (!isValidTableName(tableName)) return result;
         try (PreparedStatement ps = getConnection().prepareStatement(
-                "SELECT content_id FROM vec_items WHERE embedding MATCH ? ORDER BY distance LIMIT ?")) {
+                "SELECT content_id FROM " + tableName + " WHERE embedding MATCH ? ORDER BY distance LIMIT ?")) {
             ByteBuffer buf = ByteBuffer.allocate(queryVec.length * 4);
             for (double d : queryVec) buf.putFloat((float) d);
             ps.setBytes(1, buf.array());
@@ -89,6 +92,15 @@ public class VecEngine {
             System.out.println("[VEC] Ошибка поиска: " + e.getMessage());
         }
         return result;
+    }
+
+    // Обёртки для совместимости со старым кодом
+    public static void rebuildTable(int dimension) { rebuildTable("vec_items", dimension); }
+    public static void insert(int contentId, double[] vec) { insert("vec_items", contentId, vec); }
+    public static List<Integer> search(double[] queryVec, int topK) { return search("vec_items", queryVec, topK); }
+
+    private static boolean isValidTableName(String name) {
+        return name != null && name.matches("[a-zA-Z0-9_]+");
     }
     public static void createTableIfNeeded(int dimension) {
         if (!available) return;

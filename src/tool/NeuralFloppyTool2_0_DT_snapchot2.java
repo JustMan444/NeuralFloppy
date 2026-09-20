@@ -1355,12 +1355,17 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                             System.out.println("Эмбеддинги уже строятся. Ожидайте.");
                             return;
                         }
+                        String column = parts.length > 2 ? parts[2] : null;
                         embedBuildInProgress = true;
                         Thread bg = new Thread(() -> {
                             try {
-                                System.out.println("[EMBED] Строю эмбеддинги... Это может занять минуту.");
-                                EmbeddingEngine.build();
-                                System.out.println("[EMBED] Готово.");
+                                if (column != null) {
+                                    System.out.println("[EMBED] Строю эмбеддинги для колонки '" + column + "'...");
+                                    EmbeddingEngine.buildForColumn(column);
+                                } else {
+                                    System.out.println("[EMBED] Строю эмбеддинги для глобальной памяти...");
+                                    EmbeddingEngine.build();
+                                }
                             } catch (Exception e) {
                                 System.out.println("[EMBED] Ошибка: " + e.getMessage());
                             } finally {
@@ -1369,7 +1374,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         });
                         bg.setDaemon(true);
                         bg.start();
-                        System.out.println("Эмбеддинги строятся в фоне. Можно писать дальше.");
+                        System.out.println("Эмбеддинги строятся в фоне.");
                     }
                     case "model" -> {
                         if (parts.length < 3) {
@@ -2118,6 +2123,53 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 return 1024;
             }
             return 768; // nomic и все остальные
+        }
+        static void buildForColumn(String column) throws Exception {
+            String fileName = "chat_" + column + ".ndjson";
+            Path path = Path.of(fileName);
+            if (!Files.exists(path)) {
+                System.out.println("[EMBED] Файл колонки не найден: " + fileName);
+                return;
+            }
+
+            // Читаем сообщения колонки
+            List<Message> columnMessages = new ArrayList<>();
+            try (Stream<String> lines = Files.lines(path, StandardCharsets.UTF_8)) {
+                lines.forEach(line -> {
+                    if (line.isBlank()) return;
+                    try {
+                        JsonObject obj = GSON.fromJson(line, JsonObject.class);
+                        columnMessages.add(new Message(
+                                obj.get("role").getAsString(),
+                                obj.get("content").getAsString(),
+                                obj.has("ts") ? obj.get("ts").getAsLong() : 0
+                        ));
+                    } catch (Exception e) { /* skip */ }
+                });
+            }
+
+            String tableName = "vec_items_" + column;
+            if (VecEngine.isAvailable()) {
+                VecEngine.rebuildTable(tableName, getEmbeddingDimension());
+            }
+
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+            int i = 0, skipped = 0;
+            for (Message msg : columnMessages) {
+                if (msg.content.isBlank()) continue;
+                String text = msg.content.length() > 500 ? msg.content.substring(0, 500) : msg.content;
+                try {
+                    double[] vec = getEmbedding(client, text);
+                    if (VecEngine.isAvailable()) {
+                        VecEngine.insert(tableName, i, vec);
+                    }
+                    i++;
+                } catch (Exception e) {
+                    skipped++;
+                    System.err.println("[EMBED] Ошибка: " + e.getMessage());
+                }
+            }
+            System.out.println("[EMBED] Построено " + i + " эмбеддингов для колонки '" + column + "'. Пропущено: " + skipped);
         }
 
         static void build() throws Exception {
