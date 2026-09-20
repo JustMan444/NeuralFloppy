@@ -201,14 +201,13 @@ public class ColumnMemory {
     public static void saveEpisode(String column, Episode episode) throws Exception {
         Path path = Path.of("chat_" + column + ".ndjson");
         JsonObject obj = new JsonObject();
-        obj.addProperty("role", "SYSTEM");
-        obj.add("state", GSON.fromJson(episode.state, JsonObject.class));
-        obj.addProperty("action", episode.action);
-        obj.addProperty("reward", episode.reward);
-        if (episode.nextState != null) {
-            obj.add("next_state", GSON.fromJson(episode.nextState, JsonObject.class));
+        obj.add("state", GSON.fromJson(episode.state(), JsonObject.class));
+        obj.addProperty("action", episode.action());
+        obj.addProperty("reward", episode.reward());
+        if (episode.nextState() != null) {
+            obj.add("next_state", GSON.fromJson(episode.nextState(), JsonObject.class));
         }
-        obj.addProperty("ts", episode.ts);
+        obj.addProperty("ts", episode.ts());
         String line = GSON.toJson(obj) + "\n";
         Files.writeString(path, line, StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
