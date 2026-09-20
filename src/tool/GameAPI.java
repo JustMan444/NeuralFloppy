@@ -1,9 +1,6 @@
 package tool;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
@@ -79,7 +76,24 @@ public class GameAPI {
         }
 
         // 5. Обработка команд (только для full-control)
+// 5. Обработка команд (только для full-control)
         if (fullControl && requestJson.has("commands")) {
+            try {
+                JsonArray commands = requestJson.getAsJsonArray("commands");
+                for (JsonElement cmdElement : commands) {
+                    String cmd = cmdElement.getAsString();
+                    if (cmd == null || cmd.isBlank()) continue;
+
+                    if (!core.executeCommand(cmd)) {
+                        sendError(exchange, 403, "Command is not allowed or failed: " + cmd);
+                        return;
+                    }
+                    System.out.println("[API] Выполнена команда: " + cmd);
+                }
+            } catch (Exception e) {
+                sendError(exchange, 400, "Invalid commands format: " + e.getMessage());
+                return;
+            }
         }
 
         // 6. Обработка формата

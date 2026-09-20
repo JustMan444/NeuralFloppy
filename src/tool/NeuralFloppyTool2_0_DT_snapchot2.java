@@ -77,6 +77,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         VecEngine.init();
         if (VecEngine.isAvailable()) {
             VecEngine.createTableIfNeeded(768); // размерность текущей модели
+            VecEngine.rebuildTable(EmbeddingEngine.getEmbeddingDimension());
         }
 
         try {
@@ -1110,7 +1111,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     return;
                 }
                 if(parts[1].equalsIgnoreCase("news")) {
-                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : второе обновление добавлена поддержка вшитого векторного пространства в БД для огромной скорости \n добавлены команда для будущего управления движками включая старые версии NeuralFloppy \n создан первый exe файл");
+                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : смерть проекта NeuralFloppy будущее не известно");
                 }
 
             }
