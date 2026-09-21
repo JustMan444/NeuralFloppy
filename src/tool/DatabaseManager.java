@@ -98,4 +98,74 @@ public class DatabaseManager {
             this.ts = ts;
         }
     }
+    public static void initFts5() throws SQLException {
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:data/neuralfloppy.db");
+             Statement stmt = c.createStatement()) {
+
+            // Таблица FTS5, привязанная к messages
+            stmt.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                content,
+                role UNINDEXED,
+                ts UNINDEXED,
+                content='messages',
+                content_rowid='id'
+            )
+        """);
+
+            // Триггер на INSERT
+            stmt.execute("""
+            CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+                INSERT INTO messages_fts(rowid, content, role, ts)
+                VALUES (new.id, new.content, new.role, new.ts);
+            END
+        """);
+
+            // Триггер на DELETE
+            stmt.execute("""
+            CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, content, role, ts)
+                VALUES('delete', old.id, old.content, old.role, old.ts);
+            END
+        """);
+
+            // Триггер на UPDATE
+            stmt.execute("""
+            CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, content, role, ts)
+                VALUES('delete', old.id, old.content, old.role, old.ts);
+                INSERT INTO messages_fts(rowid, content, role, ts)
+                VALUES (new.id, new.content, new.role, new.ts);
+            END
+        """);
+
+            System.out.println("[FTS5] Таблица messages_fts готова.");
+        }
+    }
+
+    public static void backfillFts5() throws SQLException {
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:data/neuralfloppy.db");
+             Statement stmt = c.createStatement()) {
+            // Заливаем всё, что ещё не проиндексировано
+            stmt.execute("""
+            INSERT INTO messages_fts(rowid, content, role, ts)
+            SELECT id, content, role, ts FROM messages
+            WHERE id NOT IN (SELECT rowid FROM messages_fts)
+        """);
+            System.out.println("[FTS5] Индекс заполнен из messages.");
+        }
+    }
+
+    public static List<String> searchFts(String query, int limit) throws SQLException {
+        List<String> results = new ArrayList<>();
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:data/neuralfloppy.db");
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT content FROM messages_fts WHERE content MATCH ? ORDER BY rank LIMIT ?")) {
+            ps.setString(1, query);
+            ps.setInt(2, limit);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) results.add(rs.getString("content"));
+        }
+        return results;
+    }
 }

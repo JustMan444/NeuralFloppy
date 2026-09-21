@@ -74,6 +74,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
 
         ModuleLoader.register(new HelloModule());
         DatabaseManager.initDatabase();
+        DatabaseManager.initFts5();
+        DatabaseManager.backfillFts5();  // заполнить индекс существующими сообщениями
         VecEngine.init();
         if (VecEngine.isAvailable()) {
             EmbeddingEngine.getEmbeddingDimension(); // размерность текущей модели
@@ -2104,53 +2106,72 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         // Делегируем в ColumnMemory — она уже умеет и vec, и fallback
         return new ColumnMemory(column).search(query, topN, searchEngine);
     }
-    static List<String> searchContext(String query, int topN) {
-        List<String> activeResults = new ArrayList<>();
 
-        // 0. Поиск через sqlite-vec (если включён движок vec или hybrid)
+
+    static List<String> searchContext(String query, int topN) {
+        List<String> combined = new ArrayList<>();
+        Set<String> seen = new HashSet<>(); // дедупликация
+
+        // ============ 1. FTS5 — точные слова ============
+        if (!query.isBlank()) {
+            try {
+                String safeQuery = query.replaceAll("[^\\p{L}\\p{N}\\s]", " ").trim();
+                if (!safeQuery.isBlank()) {
+                    List<String> fts = DatabaseManager.searchFts(safeQuery, topN);
+                    for (String s : fts) {
+                        if (seen.add(s)) combined.add(s);
+                    }
+                    System.out.println("[HYBRID] FTS5 вернул: " + fts.size());
+                }
+            } catch (Exception e) {
+                System.out.println("[FTS5] Ошибка: " + e.getMessage());
+            }
+        }
+
+        // ============ 2. vec — смысл ============
         if (("vec".equals(searchEngine) || "hybrid".equals(searchEngine)) && VecEngine.isAvailable()) {
             try {
                 HttpClient client = HttpClient.newHttpClient();
                 double[] queryVec = EmbeddingEngine.getEmbedding(client, query);
                 List<Integer> ids = VecEngine.search(queryVec, topN);
-                if (!ids.isEmpty()) {
-                    for (int id : ids) {
-                        if (id >= 0 && id < messages.size()) {
-                            activeResults.add(messages.get(id).content);
+                int added = 0;
+                for (int id : ids) {
+                    if (id >= 0 && id < messages.size()) {
+                        String s = messages.get(id).content;
+                        if (seen.add(s)) {
+                            combined.add(s);
+                            added++;
                         }
                     }
-                    if (!activeResults.isEmpty()) {
-                        // Возвращаем vec-результаты сразу, без классического перебора
-                        // Но оставляем возможность дополнить холодной памятью ниже
-                        // (если нужно, можно убрать этот early-return)
-                        List<String> cold = searchColdMemory(query, 3);
-                        activeResults.addAll(cold);
-                        return activeResults.stream().distinct().limit(topN).collect(Collectors.toList());
-                    }
                 }
+                System.out.println("[HYBRID] vec вернул: " + ids.size() + " (новых: " + added + ")");
             } catch (Exception e) {
                 System.out.println("[VEC] Ошибка поиска: " + e.getMessage());
-                // fallback на классический поиск ниже
             }
         }
 
-        // 1. Поиск в активном индексе (эмбеддинги или wordIndex)
-        if (embedEnabled && !EmbeddingEngine.vectors.isEmpty()) {
+        // ============ 3. Fallback: эмбеддинги в памяти ============
+        if (combined.isEmpty() && embedEnabled && !EmbeddingEngine.vectors.isEmpty()) {
             try {
-                activeResults = EmbeddingEngine.search(query, topN);
+                List<String> emb = EmbeddingEngine.search(query, topN);
+                for (String s : emb) {
+                    if (seen.add(s)) combined.add(s);
+                }
+                System.out.println("[HYBRID] embeddings fallback: " + emb.size());
             } catch (Exception e) {
                 System.out.println("[Embed] Ошибка: " + e.getMessage());
             }
         }
-        if (activeResults.isEmpty()) {
-            // Fallback на wordIndex
+
+        // ============ 4. Fallback: wordIndex ============
+        if (combined.isEmpty()) {
             Set<String> tokens = tokenize(query);
             Map<Integer, Integer> scores = new HashMap<>();
             for (String token : tokens) {
                 List<Integer> ids = wordIndex.get(token);
                 if (ids != null) ids.forEach(id -> scores.merge(id, 1, Integer::sum));
             }
-            activeResults = scores.entrySet().stream()
+            List<String> wordResults = scores.entrySet().stream()
                     .sorted((e1, e2) -> {
                         int cmp = Integer.compare(e2.getValue(), e1.getValue());
                         if (cmp == 0) cmp = Long.compare(messages.get(e2.getKey()).ts, messages.get(e1.getKey()).ts);
@@ -2159,15 +2180,20 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     .limit(topN)
                     .map(e -> messages.get(e.getKey()).content)
                     .collect(Collectors.toList());
+            for (String s : wordResults) {
+                if (seen.add(s)) combined.add(s);
+            }
+            System.out.println("[HYBRID] wordIndex fallback: " + wordResults.size());
         }
 
-        // 2. Поиск в долгой (холодной) памяти
+        // ============ 5. Холодная память ============
         List<String> coldResults = searchColdMemory(query, 3);
+        for (String s : coldResults) {
+            if (seen.add(s)) combined.add(s);
+        }
 
-        // 3. Объединяем: сначала активные, потом холодные
-        List<String> combined = new ArrayList<>(activeResults);
-        combined.addAll(coldResults);
-        return combined.stream().distinct().limit(topN).collect(Collectors.toList());
+        // ============ 6. Обрезаем до topN ============
+        return combined.stream().limit(topN).collect(Collectors.toList());
     }
 
     // Вспомогательный метод для холодной памяти (вынес, чтобы не дублировать)
