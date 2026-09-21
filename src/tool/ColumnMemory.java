@@ -174,29 +174,34 @@ public class ColumnMemory {
     }
     // ================== ЭПИЗОДЫ ==================
 
-    public static List<Episode> loadEpisodes(String column, int limit) throws Exception {
-        List<Episode> list = new ArrayList<>();
-        Path path = Path.of("chat_" + column + ".ndjson");
-        if (!Files.exists(path)) return list;
+public static List<Episode> loadEpisodes(String column, int limit) throws Exception {
+    List<Episode> list = new ArrayList<>();
+    Path path = Path.of("chat_" + column + ".ndjson");
+    if (!Files.exists(path)) return list;
 
-        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
-        int start = Math.max(0, lines.size() - limit);
-        for (int i = start; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (line.isBlank()) continue;
-            try {
-                JsonObject obj = GSON.fromJson(line, JsonObject.class);
-                // Формат observer: state/action/reward/next_state лежат либо в state, либо в корне
-                String state = obj.has("state") ? obj.get("state").toString() : "{}";
-                String action = obj.has("action") ? obj.get("action").getAsString() : "";
-                double reward = obj.has("reward") ? obj.get("reward").getAsDouble() : 0.0;
-                String nextState = obj.has("next_state") ? obj.get("next_state").toString() : "{}";
-                long ts = obj.has("ts") ? obj.get("ts").getAsLong() : 0;
-                list.add(new Episode(state, action, reward, nextState, ts));
-            } catch (Exception e) { /* skip */ }
-        }
-        return list;
+    List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+    int start = Math.max(0, lines.size() - limit);
+    for (int i = start; i < lines.size(); i++) {
+        String line = lines.get(i);
+        if (line.isBlank()) continue;
+        try {
+            JsonObject obj = GSON.fromJson(line, JsonObject.class);
+
+            // Эпизод = должен содержать state И action (минимум)
+            if (!obj.has("state") || !obj.has("action")) {
+                continue; // не эпизод, пропускаем
+            }
+
+            String state = obj.get("state").toString();
+            String action = obj.get("action").getAsString();
+            double reward = obj.has("reward") ? obj.get("reward").getAsDouble() : 0.0;
+            String nextState = obj.has("next_state") ? obj.get("next_state").toString() : "{}";
+            long ts = obj.has("ts") ? obj.get("ts").getAsLong() : 0;
+            list.add(new Episode(state, action, reward, nextState, ts));
+        } catch (Exception e) { /* skip битую строку */ }
     }
+    return list;
+}
 
     public static void saveEpisode(String column, Episode episode) throws Exception {
         Path path = Path.of("chat_" + column + ".ndjson");
