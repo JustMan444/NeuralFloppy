@@ -27,4 +27,26 @@ public interface ModuleContext {
     List<String> listColumns();
     void createColumn(String name);
     void clearColumn(String name);
+
+    // === Registry ===
+    void register(String namespace, String name, Object thing);
+    Object get(String namespace, String name);
+    boolean exists(String namespace, String name);
+
+    // === Доступ к модулям ===
+    Module getModule(String name);
+    boolean isModuleEnabled(String name);
+    List<String> listModules();
+
+    // === Config ===
+    String getConfig(String key, String defaultValue);
+    void setConfig(String key, String value);
+    boolean hasConfig(String key);
+
+    // === Логи ===
+    void logTrace(String msg);
+    void logDebug(String msg);
+    void logInfo(String msg);
+    void logWarn(String msg);
+    void logError(String msg, Throwable t);
 }

@@ -1,16 +1,18 @@
 package tool;
 
-import java.sql.SQLException;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 public class MainModuleSystem implements ModuleContext {
     private final NeuralFloppyCore core;
+    private final String moduleName;
 
-    public MainModuleSystem(NeuralFloppyCore core) {
+    public MainModuleSystem(NeuralFloppyCore core, String moduleName) {
         this.core = core;
+        this.moduleName = moduleName;
     }
+
+    // ==================== Старые методы ====================
 
     @Override
     public List<String> findContext(String query) {
@@ -27,10 +29,6 @@ public class MainModuleSystem implements ModuleContext {
         return core.callLLM(prompt, mode);
     }
 
-    @Override
-    public void log(String text) {
-        System.out.println(text);
-    }
     @Override
     public List<Episode> getEpisodes(String column, int limit) {
         return core.getEpisodes(column, limit);
@@ -84,5 +82,86 @@ public class MainModuleSystem implements ModuleContext {
     @Override
     public void clearColumn(String name) {
         core.clearColumn(name);
+    }
+
+    // ==================== Новые методы: Registry ====================
+
+    @Override
+    public void register(String namespace, String name, Object thing) {
+        core.register(namespace, name, thing);
+    }
+
+    @Override
+    public Object get(String namespace, String name) {
+        return core.get(namespace, name);
+    }
+
+    @Override
+    public boolean exists(String namespace, String name) {
+        return core.exists(namespace, name);
+    }
+
+    // ==================== Новые методы: Config ====================
+
+    @Override
+    public String getConfig(String key, String defaultValue) {
+        return core.getConfig(key, defaultValue);
+    }
+
+    @Override
+    public void setConfig(String key, String value) {
+        core.setConfig(key, value);
+    }
+
+    @Override
+    public boolean hasConfig(String key) {
+        return core.hasConfig(key);
+    }
+
+    // ==================== Логи с префиксом ====================
+
+    @Override
+    public void log(String text) {
+        logInfo(text);
+    }
+
+    @Override
+    public void logTrace(String msg) {
+        System.out.println("[TRACE][" + moduleName + "] " + msg);
+    }
+
+    @Override
+    public void logDebug(String msg) {
+        System.out.println("[DEBUG][" + moduleName + "] " + msg);
+    }
+
+    @Override
+    public void logInfo(String msg) {
+        System.out.println("[INFO][" + moduleName + "] " + msg);
+    }
+
+    @Override
+    public void logWarn(String msg) {
+        System.out.println("[WARN][" + moduleName + "] " + msg);
+    }
+
+    @Override
+    public void logError(String msg, Throwable t) {
+        System.err.println("[ERROR][" + moduleName + "] " + msg +
+                (t != null ? " | " + t.getMessage() : ""));
+    }
+    @Override
+    public Module getModule(String name) {
+        return core.getModule(name);
+    }
+
+    @Override
+    public boolean isModuleEnabled(String name) {
+        return core.isModuleEnabled(name);
+    }
+
+    @Override
+    public List<String> listModules() {
+        return core.listModules();
     }
 }

@@ -1,5 +1,1 @@
-{
-  "api_key": "sk-or-...",
-  "api_url": "https://openrouter.ai/api/v1/chat/completions",
-  "default_model": "openrouter/free"
-}
+{"api_key":"","api_url":"https://openrouter.ai/api/v1/chat/completions","default_model":"openrouter/free"}

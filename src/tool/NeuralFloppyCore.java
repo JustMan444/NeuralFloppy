@@ -28,4 +28,13 @@ public interface NeuralFloppyCore {
     List<String> listColumns();
     void createColumn(String name);
     void clearColumn(String name);
+    void register(String namespace, String name, Object thing);
+    Object get(String namespace, String name);
+    boolean exists(String namespace, String name);
+    String getConfig(String key, String defaultValue);
+    void setConfig(String key, String value);
+    boolean hasConfig(String key);
+    Module getModule(String name);
+    boolean isModuleEnabled(String name);
+    List<String> listModules();
 }

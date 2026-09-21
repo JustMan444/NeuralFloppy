@@ -19,11 +19,18 @@ public class HelloModule implements Module {
     public void enable(ModuleContext context) {
         this.ctx = context;
         enabled = true;
-        ctx.log("[HELLO] Модуль включён. Готов к работе.");
-        // Пример использования фич сразу при включении
-        List<String> ctxs = ctx.findContext("привет");
-        ctx.log("[HELLO] Найдено контекстов по 'привет': " + ctxs.size());
-        ctx.saveMessage("SYSTEM", "HelloModule успешно включён.");
+        ctx.logInfo("Модуль включён.");
+
+        // Registry
+        ctx.register("hello", "greeting", "Hello, World!");
+        ctx.logInfo("Registered greeting: " + ctx.get("hello", "greeting"));
+
+        // Config
+        ctx.setConfig("hello.mode", "test");
+        ctx.logInfo("Config: " + ctx.getConfig("hello.mode", "default"));
+
+        // Модули
+        ctx.logInfo("Модулей: " + ctx.listModules());
     }
 
     @Override

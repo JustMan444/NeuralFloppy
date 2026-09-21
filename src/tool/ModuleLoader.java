@@ -15,6 +15,14 @@ public class ModuleLoader {
         modules.put(module.getName(), module);
         // Команды регистрируем только при включении модуля
     }
+    public static Module getModule(String name) {
+        return modules.get(name);
+    }
+
+    public static boolean isEnabled(String name) {
+        Module m = modules.get(name);
+        return m != null && m.isEnabled();
+    }
     public static void loadAll(Path dir) {
         if (!Files.isDirectory(dir)) return;
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.jar")) {
@@ -33,16 +41,17 @@ public class ModuleLoader {
             } catch (Exception e) { /* лог */ }
         }
     }
-    public static void enable(String name, ModuleContext context) {
+    public static void enable(String name, ModuleContext baseContext, NeuralFloppyCore core) {
         Module module = modules.get(name);
-        if (module == null) {
-            System.out.println("[MODULES] Модуль '" + name + "' не найден.");
-            return;
+        if (module == null) return;
+        try {
+            ModuleContext personalCtx = new MainModuleSystem(core, name);
+            module.enable(personalCtx);
+            module.getCommands().forEach((cmd, handler) -> commandRegistry.put(cmd, handler));
+            System.out.println("[MODULES] Модуль '" + name + "' включён.");
+        } catch (Exception e) {
+            System.err.println("[MODULES] Ошибка включения '" + name + "': " + e.getMessage());
         }
-        module.enable(context);
-        // Регистрируем команды активного модуля
-        module.getCommands().forEach((cmd, handler) -> commandRegistry.put(cmd, handler));
-        System.out.println("[MODULES] Модуль '" + name + "' включён. Команды: " + module.getCommands().keySet());
     }
 
     public static void disable(String name) {

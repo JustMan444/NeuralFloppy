@@ -6,6 +6,8 @@ import com.google.gson.JsonObject;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ConfigManager {
     private static final String CONFIG_FILE = "config.json";
@@ -33,6 +35,22 @@ public class ConfigManager {
         } catch (Exception e) {
             System.out.println("[CONFIG] Ошибка загрузки: " + e.getMessage());
         }
+    }
+    private static final Map<String, String> extraConfig = new ConcurrentHashMap<>();
+
+    public static String get(String key) {
+        if (key.equals("api_key")) return apiKey;
+        if (key.equals("api_url")) return apiUrl;
+        if (key.equals("default_model")) return defaultModel;
+        return extraConfig.get(key);
+    }
+
+    public static void set(String key, String value) {
+        if (key.equals("api_key")) apiKey = value;
+        else if (key.equals("api_url")) apiUrl = value;
+        else if (key.equals("default_model")) defaultModel = value;
+        else extraConfig.put(key, value);
+        save();
     }
 
     public static void save() {

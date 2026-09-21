@@ -14,6 +14,7 @@ import java.sql.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.*;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpExchange;
@@ -35,6 +36,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static List<Message> messages = new ArrayList<>();
     private static Map<String, List<Integer>> wordIndex = new HashMap<>();
     private static String currentPersona = "";
+
+    private static NeuralFloppyCore coreInstance;
 
     enum Mode { API, LOCAL, MANUAL }
     private static Mode currentMode = Mode.API;
@@ -125,9 +128,9 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             EmbeddingEngine.load();
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
-        NeuralFloppyTool2_0_DT_snapchot2 app = new NeuralFloppyTool2_0_DT_snapchot2();
-        GameAPI.setCore(app);
-        moduleContext = new MainModuleSystem(app);
+        coreInstance = new NeuralFloppyTool2_0_DT_snapchot2();
+        GameAPI.setCore(coreInstance);
+        moduleContext = new MainModuleSystem(coreInstance,"core");
         System.out.println("NeuralFloppy TOOL V1.9.3/*. " + messages.size() + " сообщений в индексе.");
         System.out.println("Режим: " + currentMode + " | Модель: " + currentModel + " | Автосохранение: " + (autoSave ? "вкл" : "выкл") + " | Стриминг: " + (streaming ? "вкл" : "выкл"));
         System.out.println("Введи :help для списка команд.\n");
@@ -934,6 +937,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     // ================== КОМАНДЫ ==================
     static void handleCommand(String cmd) throws IOException {
         String[] parts = cmd.split("\\s+");
+
         // Пытаемся найти команду от модуля
         Map<String, CommandHandler> moduleCommands = ModuleLoader.getCommandRegistry();
         if (!moduleCommands.isEmpty()) {
@@ -941,6 +945,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 if (parts[0].equalsIgnoreCase(entry.getKey())) {
                     entry.getValue().execute(parts);
                     return;
+
                 }
             }
         }
@@ -1146,7 +1151,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 String action = parts[1];
                 String name = parts[2];
                 if (action.equalsIgnoreCase("enable")) {
-                    ModuleLoader.enable(name, moduleContext);
+                    ModuleLoader.enable(name, moduleContext, coreInstance);
                 } else if (action.equalsIgnoreCase("disable")) {
                     ModuleLoader.disable(name);
                 } else {
@@ -2107,6 +2112,43 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         return new ColumnMemory(column).search(query, topN, searchEngine);
     }
 
+    // === Registry ===
+    private static final Map<String, Map<String, Object>> registry = new ConcurrentHashMap<>();
+
+    @Override
+    public void register(String namespace, String name, Object thing) {
+        registry.computeIfAbsent(namespace, k -> new ConcurrentHashMap<>()).put(name, thing);
+    }
+
+    @Override
+    public Object get(String namespace, String name) {
+        Map<String, Object> ns = registry.get(namespace);
+        return ns == null ? null : ns.get(name);
+    }
+
+    @Override
+    public boolean exists(String namespace, String name) {
+        Map<String, Object> ns = registry.get(namespace);
+        return ns != null && ns.containsKey(name);
+    }
+
+    // === Config ===
+    @Override
+    public String getConfig(String key, String defaultValue) {
+        String value = ConfigManager.get(key);
+        return value != null ? value : defaultValue;
+    }
+
+    @Override
+    public void setConfig(String key, String value) {
+        ConfigManager.set(key, value);
+    }
+
+    @Override
+    public boolean hasConfig(String key) {
+        return ConfigManager.get(key) != null;
+    }
+
 
     static List<String> searchContext(String query, int topN) {
         List<String> combined = new ArrayList<>();
@@ -2239,6 +2281,20 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         return Arrays.stream(text.toLowerCase().split("[^а-яa-z0-9]+"))
                 .filter(w -> w.length() > 1)
                 .collect(Collectors.toSet());
+    }
+    @Override
+    public Module getModule(String name) {
+        return ModuleLoader.getModule(name);
+    }
+
+    @Override
+    public boolean isModuleEnabled(String name) {
+        return ModuleLoader.isEnabled(name);
+    }
+
+    @Override
+    public List<String> listModules() {
+        return ModuleLoader.listNames();
     }
     static class EmbeddingEngine {
         static List<double[]> vectors = new ArrayList<>();
@@ -2373,6 +2429,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             }
             return vec;
         }
+
 
         static List<String> search(String query, int topN) throws Exception {
             if (vectors.isEmpty()) return List.of();
