@@ -96,10 +96,9 @@ public class GameAPI {
                 return;
             }
         }
-
         // 6. Обработка формата
-        JsonObject responseJson = processFormat(column, format, requestJson);
 
+        JsonObject responseJson = processFormat(column, format, requestJson,fullControl);
         // 7. Отправка ответа
         byte[] responseBytes = responseJson.toString().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
@@ -111,7 +110,7 @@ public class GameAPI {
 
     // -------------------------- ОБРАБОТКА ФОРМАТОВ --------------------------
 
-    private static JsonObject processFormat(String column, String format, JsonObject requestJson) {
+    private static JsonObject processFormat(String column, String format, JsonObject requestJson,boolean fullControl) {
         JsonObject response = new JsonObject();
         String columnType = requestJson.has("type") ? requestJson.get("type").getAsString() : "classic";
 
@@ -133,6 +132,19 @@ public class GameAPI {
                         String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson, column);
                         response.addProperty("message", llmAnswer);
                         break;
+                    case "command":
+                        if (!fullControl) {
+                            response.addProperty("error", "Command format only available on /api/full-control");
+                            break;
+                        }
+                        if (!requestJson.has("command")) {
+                            response.addProperty("error", "Field 'command' is required");
+                            break;
+                        }
+                        String cmd = requestJson.get("command").getAsString();
+                        String result = core.executeCommandWithResult(cmd);
+                        response.addProperty("result", result);
+                        break;
                     default:
                         sendError(null, 400, "Unknown format: " + format);
                         break;
@@ -148,6 +160,19 @@ public class GameAPI {
                         String llmAnalysis = core.analyzeWithLLM(requestJson.get("query").getAsString(), requestJson);
                         core.saveToColumn(column, llmAnalysis, "looker");
                         response.addProperty("status", "recorded");
+                        break;
+                    case "command":
+                        if (!fullControl) {
+                            response.addProperty("error", "Command format only available on /api/full-control");
+                            break;
+                        }
+                        if (!requestJson.has("command")) {
+                            response.addProperty("error", "Field 'command' is required");
+                            break;
+                        }
+                        String cmd = requestJson.get("command").getAsString();
+                        String result = core.executeCommandWithResult(cmd);
+                        response.addProperty("result", result);
                         break;
                     default:
                         String llmAnswer = core.askLLM(requestJson.get("query").getAsString(), requestJson, column);

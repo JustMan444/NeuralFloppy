@@ -70,4 +70,15 @@ public class ModuleLoader {
     public static Map<String, CommandHandler> getCommandRegistry() {
         return commandRegistry;
     }
+
+    public static String executeCommand(String cmd) {
+        String[] parts = cmd.split("\\s+");
+        CommandHandler handler = commandRegistry.get(parts[0]);
+        if (handler == null) return null; // команда не от модуля
+        try {
+            return handler.execute(parts);
+        } catch (Exception e) {
+            return "{\"error\":\"" + e.getMessage().replace("\"", "\\\"") + "\"}";
+        }
+    }
 }

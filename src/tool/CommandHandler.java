@@ -1,5 +1,5 @@
 package tool;
 
 public interface CommandHandler {
-    void execute(String[] args);
+    String execute(String[] args);
 }

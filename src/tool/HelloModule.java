@@ -48,47 +48,41 @@ public class HelloModule implements Module {
     public Map<String, CommandHandler> getCommands() {
         return Map.of(
                 ":hello", args -> {
-                    if (!enabled || ctx == null) return;
+                    if (!enabled || ctx == null) return "{\"error\":\"module disabled\"}";
                     if (args.length < 2) {
-                        ctx.log("[HELLO] Используй: :hello search <текст> | :hello save <текст> | :hello ask <промпт> | :hello status");
-                        return;
+                        return "{\"usage\":\":hello search|save|ask|status|test\"}";
                     }
                     String sub = args[1];
                     switch (sub) {
-                        case "status" -> ctx.log("[HELLO] Статус: " + (enabled ? "активен" : "выключен"));
+                        case "status" -> {
+                            return "{\"status\":\"active\",\"name\":\"hello\"}";
+                        }
                         case "search" -> {
-                            if (args.length < 3) { ctx.log("[HELLO] Укажи текст поиска."); return; }
+                            if (args.length < 3) return "{\"error\":\"no query\"}";
                             String q = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
-                            List<String> found = ctx.findContext(q);
-                            ctx.log("[HELLO] Найдено по '" + q + "': " + found.size() + " фрагментов.");
+                            java.util.List<String> found = ctx.findContext(q);
+                            return "{\"found\":" + found.size() + "}";
                         }
                         case "save" -> {
-                            if (args.length < 3) { ctx.log("[HELLO] Укажи текст для сохранения."); return; }
+                            if (args.length < 3) return "{\"error\":\"no text\"}";
                             String text = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
                             ctx.saveMessage("SYSTEM", text);
-                            ctx.log("[HELLO] Сохранено: " + text);
+                            return "{\"saved\":true}";
                         }
                         case "ask" -> {
-                            if (args.length < 3) { ctx.log("[HELLO] Укажи промпт."); return; }
+                            if (args.length < 3) return "{\"error\":\"no prompt\"}";
                             String prompt = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
                             String answer = ctx.callLLM(prompt, "local");
-                            ctx.log("[HELLO] Ответ LLM: " + answer);
+                            return "{\"answer\":\"" + answer.replace("\"", "\\\"") + "\"}";
                         }
-                        case "test" -> {
-                            ctx.log("Колонки: " + ctx.listColumns());
-                            ctx.createColumn("test_module_col");
-                            ctx.saveEpisode("test_module_col",
-                                    new Episode("{\"hp\":30}", "attack", 1.0, "{\"hp\":25}", System.currentTimeMillis()));
-                            List<Episode> eps = ctx.getEpisodes("test_module_col", 10);
-                            ctx.log("Эпизодов: " + eps.size());
-                            double q = ctx.getQValue("test_module_col", "{\"hp\":30}", "attack");
-                            ctx.log("Q-значение: " + q);
+                        default -> {
+                            return "{\"error\":\"unknown subcommand\"}";
                         }
-                        default -> ctx.log("[HELLO] Неизвестная подкоманда: " + sub);
                     }
                 }
         );
     }
+
 
     @Override
     public void onShutdown(ModuleContext context) {

@@ -936,18 +936,33 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
 
     // ================== КОМАНДЫ ==================
     static void handleCommand(String cmd) throws IOException {
+//        String[] parts = cmd.split("\\s+");
+//
+//        // Пытаемся найти команду от модуля
+//        Map<String, CommandHandler> moduleCommands = ModuleLoader.getCommandRegistry();
+//        if (!moduleCommands.isEmpty()) {
+////            for (Map.Entry<String, CommandHandler> entry : moduleCommands.entrySet()) {
+////                if (parts[0].equalsIgnoreCase(entry.getKey())) {
+////                    entry.getValue().execute(parts);
+////                    return;
+////
+////                }
+////            }
+//            // Пытаемся найти команду от модуля
+//            String moduleResult = ModuleLoader.executeCommand(cmd);
+//            if (moduleResult != null) {
+//                System.out.println(moduleResult);
+//                return;
+//            }
+//
+//        }
         String[] parts = cmd.split("\\s+");
 
         // Пытаемся найти команду от модуля
-        Map<String, CommandHandler> moduleCommands = ModuleLoader.getCommandRegistry();
-        if (!moduleCommands.isEmpty()) {
-            for (Map.Entry<String, CommandHandler> entry : moduleCommands.entrySet()) {
-                if (parts[0].equalsIgnoreCase(entry.getKey())) {
-                    entry.getValue().execute(parts);
-                    return;
-
-                }
-            }
+        String moduleResult = ModuleLoader.executeCommand(cmd);
+        if (moduleResult != null) {
+            System.out.println(moduleResult);
+            return;
         }
         switch (parts[0]) {
             case ":help" -> {
@@ -2124,6 +2139,14 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     public Object get(String namespace, String name) {
         Map<String, Object> ns = registry.get(namespace);
         return ns == null ? null : ns.get(name);
+    }
+    @Override
+    public String executeCommandWithResult(String cmd) {
+        String result = ModuleLoader.executeCommand(cmd);
+        if (result == null) {
+            return "{\"error\":\"command not found\"}";
+        }
+        return result;
     }
 
     @Override

@@ -37,4 +37,6 @@ public interface NeuralFloppyCore {
     Module getModule(String name);
     boolean isModuleEnabled(String name);
     List<String> listModules();
+    String executeCommandWithResult(String cmd);
+
 }
