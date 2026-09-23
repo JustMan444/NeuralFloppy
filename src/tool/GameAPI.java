@@ -124,13 +124,15 @@ public class GameAPI {
                         return;
                     }
                 }
-                if (query == null) {
-                    sendError(exchange, 400, "Field 'query' required in q-agent type");
-                    return;
-                }
-                if (query.isBlank() || query.length() >= 100000) {
-                    sendError(exchange, 400, "Field 'query' is too long or not a string");
-                    return;
+                if (!"observer".equalsIgnoreCase(format)) {
+                    if (query == null) {
+                        sendError(exchange, 400, "Field 'query' required in q-agent type");
+                        return;
+                    }
+                    if (query.isBlank() || query.length() >= 100000) {
+                        sendError(exchange, 400, "Field 'query' is too long or not a string");
+                        return;
+                    }
                 }
             }
             else {
