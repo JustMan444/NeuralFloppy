@@ -144,10 +144,13 @@ public class GameAPI {
                         return;
                     }
                 }
-                if (query != null) {
-                    if (query != null && (query.isBlank() || query.length() >= 100_000)) {
-                        sendError(exchange, 400, "Field 'query' is too long or not a string");
-                        return;
+                if (!"observer".equalsIgnoreCase(format)) {
+
+                    if (query != null) {
+                        if (query != null && (query.isBlank() || query.length() >= 100_000)) {
+                            sendError(exchange, 400, "Field 'query' is too long or not a string");
+                            return;
+                        }
                     }
                 }
             }
