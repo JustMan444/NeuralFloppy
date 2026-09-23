@@ -113,28 +113,23 @@ public class GameAPI {
                 sendError(exchange, 400, "Unknown format: " + format);
                 return;
             }
-            if(type.equalsIgnoreCase("q-agent")) {
+            if (type.equalsIgnoreCase("q-agent")) {
                 if (stateNV == null || !stateNV.isJsonObject()) {
                     sendError(exchange, 400, "Field 'state' required in q-agent type");
                     return;
                 }
                 if (rewardNV != null && !rewardNV.isJsonNull()) {
-                    // проверяем тип только если поле вообще есть
                     if (!rewardNV.isJsonPrimitive() || !rewardNV.getAsJsonPrimitive().isNumber()) {
-                        sendError(exchange,400,"Field 'reward' required in q-agent type");
+                        sendError(exchange, 400, "Field 'reward' must be a number if provided.");
+                        return;
                     }
                 }
-                rewardNV = rewardNV.getAsJsonPrimitive();
-                if (!rewardNV.isJsonPrimitive() || !rewardNV.getAsJsonPrimitive().isNumber() )  {
-                    sendError(exchange,400,"Field 'reward' must be a Double or int.");
-                    return;
-                }
-                if(query == null) {
-                    sendError(exchange,400,"Field 'query' required in q-agent type");
+                if (query == null) {
+                    sendError(exchange, 400, "Field 'query' required in q-agent type");
                     return;
                 }
                 if (query.isBlank() || query.length() >= 100000) {
-                    sendError(exchange,400,"Field 'query' is too long or not a string");
+                    sendError(exchange, 400, "Field 'query' is too long or not a string");
                     return;
                 }
             }
@@ -169,7 +164,6 @@ public class GameAPI {
                     return;
                 }
                 JsonArray commands = d.getAsJsonArray();
-                sendError(exchange,400,"GGG");
                 for (JsonElement cmdElement : commands) {
                     String cmd = cmdElement.getAsString();
                     if (cmd == null || cmd.isBlank()) continue;
