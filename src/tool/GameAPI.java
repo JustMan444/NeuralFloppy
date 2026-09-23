@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -25,6 +26,20 @@ public class GameAPI {
     public static void setCore(NeuralFloppyCore c) {
         core = c;
     }
+
+
+
+    //---Валидация---
+    private static final Pattern valid = Pattern.compile(
+            "[\\p{L}_][\\p{L}\\p{N}_]{0,63}"
+    );
+
+    private static final Set<String> ValidFormat =
+            Set.of("observer", "looker", "action-only", "detailed", "smart-action","chat","custom","command");
+    private static final Set<String> VALID_TYPE =
+            Set.of("q-agent","classic");
+
+
 
     // -------------------------- ОБРАБОТЧИКИ --------------------------
 
@@ -60,27 +75,101 @@ public class GameAPI {
             sendError(exchange, 400, "Invalid JSON format.");
             return;
         }
-
-        // 3. Извлечение полей
-        String column = requestJson.has("column") ? requestJson.get("column").getAsString() : core.getDefaultColumn();
-        String format = requestJson.has("format") ? requestJson.get("format").getAsString() : null;
+        try {
 
 
-        // 4. Валидация
-        if (column == null || column.isBlank()) {
-            sendError(exchange, 400, "Column is required.");
-            return;
-        }
-        if (format == null || format.isBlank()) {
-            sendError(exchange, 400, "Format is required.");
-            return;
-        }
+            // 3. Извлечение полей
+            String column = requestJson.has("column") ? requestJson.get("column").getAsString() : core.getDefaultColumn();
+            String format = requestJson.has("format") ? requestJson.get("format").getAsString() : null;
+            JsonElement stateNV = requestJson.get("state");
+            JsonElement rewardNV = requestJson.get("reward");
+            String query = requestJson.has("query") ? requestJson.get("query").getAsString() : null;
+            JsonElement typer = requestJson.get("type");
+            String type = "classic";
+            if(typer != null) {
+                if (!typer.isJsonPrimitive() || !typer.getAsJsonPrimitive().isString()) {
+                    sendError(exchange, 400, "Type must be a string");
+                    return;
+                }
+                type = typer.getAsString();
+                if (!VALID_TYPE.contains((type.toLowerCase(Locale.ROOT)))) {
+                    sendError(exchange, 400, "Unknown type: " + type);
+                    return;
+                }
+            }
+            if (column == null || column.isBlank()) {
+                sendError(exchange, 400, "Column is required.");
+                return;
+            }
+            if(!valid.matcher(column).matches()) {
+                sendError(exchange,400,"Invalid column name.");
+                return;
+            }
+            if (format == null || format.isBlank()) {
+                sendError(exchange, 400, "Format is required.");
+                return;
+            }
+            if (!ValidFormat.contains(format.toLowerCase(Locale.ROOT))) {
+                sendError(exchange, 400, "Unknown format: " + format);
+                return;
+            }
+            if(type.equalsIgnoreCase("q-agent")) {
+                if (stateNV == null || !stateNV.isJsonObject()) {
+                    sendError(exchange, 400, "Field 'state' required in q-agent type");
+                    return;
+                }
+                if (rewardNV != null && !rewardNV.isJsonNull()) {
+                    // проверяем тип только если поле вообще есть
+                    if (!rewardNV.isJsonPrimitive() || !rewardNV.getAsJsonPrimitive().isNumber()) {
+                        sendError(exchange,400,"Field 'reward' required in q-agent type");
+                    }
+                }
+                rewardNV = rewardNV.getAsJsonPrimitive();
+                if (!rewardNV.isJsonPrimitive() || !rewardNV.getAsJsonPrimitive().isNumber() )  {
+                    sendError(exchange,400,"Field 'reward' must be a Double or int.");
+                    return;
+                }
+                if(query == null) {
+                    sendError(exchange,400,"Field 'query' required in q-agent type");
+                    return;
+                }
+                if (query.isBlank() || query.length() >= 100000) {
+                    sendError(exchange,400,"Field 'query' is too long or not a string");
+                    return;
+                }
+            }
+            else {
+                if (stateNV == null || !stateNV.isJsonObject()) {
+                    sendError(exchange, 400, "Field 'state' must be a JSON object.");
+                    return;
+                }
+                if (rewardNV != null && !rewardNV.isJsonNull()) {
+                    if (!rewardNV.isJsonPrimitive() || !rewardNV.getAsJsonPrimitive().isNumber()) {
+                        sendError(exchange, 400, "Field 'reward' must be a Double or int.");
+                        return;
+                    }
+                }
+                if (query != null) {
+                    if (query != null && (query.isBlank() || query.length() >= 100_000)) {
+                        sendError(exchange, 400, "Field 'query' is too long or not a string");
+                        return;
+                    }
+                }
+            }
+
+
 
         // 5. Обработка команд (только для full-control)
 // 5. Обработка команд (только для full-control)
         if (fullControl && requestJson.has("commands")) {
             try {
-                JsonArray commands = requestJson.getAsJsonArray("commands");
+                JsonElement d = requestJson.get("commands");
+                if(!d.isJsonArray()) {
+                    sendError(exchange,400,"Field 'commands' must be an array of strings.");
+                    return;
+                }
+                JsonArray commands = d.getAsJsonArray();
+                sendError(exchange,400,"GGG");
                 for (JsonElement cmdElement : commands) {
                     String cmd = cmdElement.getAsString();
                     if (cmd == null || cmd.isBlank()) continue;
@@ -105,6 +194,9 @@ public class GameAPI {
         exchange.sendResponseHeaders(200, responseBytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(responseBytes);
+        }
+        } catch (Exception e) {
+            sendError(exchange,500,"Critical Server Error or Bad request: " + e);
         }
     }
 
