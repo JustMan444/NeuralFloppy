@@ -398,17 +398,19 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     // ================== API ==================
     static String askAPI(String question) throws Exception {
 
-        String persona = currentPersona;
+        String prefix = HotMemoryManager.getPrefix();  // ← стабильный префикс
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
+
         String prompt = String.format("""
             %s
 
-            Вот история твоего общения с учеником:
+            Ученик спросил: %s
+
+            Вот история твоего общения с учеником (используй для контекста):
             %s
 
-            Ученик спросил: %s
-            Ответь как тот самый наставник:""", persona, context, question);
+            Ответь как тот самый наставник:""", prefix, question, context);
 
         if (webSearchEnabled) {
 
@@ -452,16 +454,32 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             System.out.println("[UAZ] Уменьшаю контекст до " + contextSize);
             return askAPI(question);
         }
+
         if (json.has("choices") && json.getAsJsonArray("choices").size() > 0) {
             JsonObject message = json.getAsJsonArray("choices").get(0)
                     .getAsJsonObject().getAsJsonObject("message");
             JsonElement content = message.get("content");
             if (content != null && !content.isJsonNull()) {
+                if (json.has("usage")) {
+                    JsonObject usage = json.getAsJsonObject("usage");
+                    long hit = usage.has("prompt_cache_hit_tokens")
+                            ? usage.get("prompt_cache_hit_tokens").getAsLong() : 0;
+                    long miss = usage.has("prompt_cache_miss_tokens")
+                            ? usage.get("prompt_cache_miss_tokens").getAsLong() : 0;
+                    long completion = usage.has("completion_tokens")
+                            ? usage.get("completion_tokens").getAsLong() : 0;
+                    long promptTotal = usage.has("prompt_tokens")
+                            ? usage.get("prompt_tokens").getAsLong() : 0;
+
+                    System.out.println("[CACHE] hit=" + hit + " miss=" + miss +
+                            " (prompt=" + promptTotal + ") completion=" + completion);
+                }
                 return content.getAsString();
             } else {
                 return "Модель не ответила. Возможно, сработал фильтр безопасности. Попробуй другую модель.";
             }
         }
+
         return "Ошибка API: " + body;
     }
     static String askAPIStreamingThinking(String question) throws Exception {
@@ -650,16 +668,19 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     }
     static String askAPIStreamingToWeb(String question, OutputStream os) throws Exception {
         String persona = currentPersona;
+        String prefix = HotMemoryManager.getPrefix();
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
+
         String prompt = String.format("""
-        %s
+    %s
 
-        Вот история твоего общения с учеником:
-        %s
+    Ученик спросил: %s
 
-        Ученик спросил: %s
-        Ответь как тот самый наставник:""", persona, context, question);
+    Вот история твоего общения с учеником:
+    %s
+
+    Ответь как тот самый наставник:""", prefix, question, context);
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
@@ -988,7 +1009,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :embed auto <N>         - авто-перестроение каждые N сообщений
                     :embed status           - состояние движка
                     :persona auto           - обновить персону через ИИ
-                    :persona auto <N>       - авто-обновление каждые N сообщений
+                    :persona auto <N>       - авто-обновление каждые N сообщений :persona auto ⚠️ Не рекомендуется при включённом cache hit. ⚠️ Сбрасывает кэш промта (cache miss ~$0.13). ⚠️ Использовать не чаще 100 сообщений.
                     :persona auto off       - отключить авто-обновление
                     :remember               - сжать последние 10 сообщений
                     :memory migrate         - миграция JSON в SQLite
@@ -1022,8 +1043,16 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :modules
                     :module enable <hello>
                     :module disable <hello>
-                    :search engine classic|vec|hybrid  - выбор движка поиска (крайне не стабильно опасно для использования)
-                    :vec                                - статус sqlite-vec (безопастно не стабильно)
+                    :search engine classic|vec|hybrid  - выбор движка поиска
+                    :vec                                - статус sqlite-vec 
+                    :cache on               - включить построение префикса для Cache Hit
+                    :cache off              - выключить построение префикса для Cache Hit
+                    :hot freeze             - заморозить текущий префикс
+                    :hot refresh            - пересобрать и применить префикс 
+                    :hot status             - проверка статуса кэша
+                    
+                    :hot config <N>         -   регулирует размер префикса (ЧЕМ БОЛЬШЕ ТЕМ БОЛЬШЕ ДЕНЕГ ТРАТИТСЯ ВНАЧАЛЕ И ТЕМ МЕНЬШЕ В ДОЛГОСРОКЕ БОЛЬШИЕ ЗНАЧЕНИЯ ВЫГОДНО ДЛЯ ДЛИННЫХ СЕССИЙ)
+                    
                    
             """); // :NeuralFloppy           -узнать новости проекта
                 } else {
@@ -1147,6 +1176,28 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     System.out.println("Последняя ошибка: " + VecEngine.getLastError());
                 }
             }
+            case ":hot" -> {
+                if (parts.length < 2) {
+                    System.out.println("Используй: :hot config <токены> | :hot freeze | :hot refresh | :hot status");
+                    return;
+                }
+                switch (parts[1].toLowerCase()) {
+                    case "config" -> {
+                        if (parts.length < 3) { System.out.println("Укажи токены. Например: :hot config 4000"); return; }
+                        try {
+                            int tokens = Integer.parseInt(parts[2]);
+                            HotMemoryManager.setMaxPrefixTokens(tokens);
+                            System.out.println("[HOT] Лимит префикса: " + tokens + " токенов");
+                        } catch (NumberFormatException e) {
+                            System.out.println("Некорректное число.");
+                        }
+                    }
+                    case "freeze" -> HotMemoryManager.freeze();
+                    case "refresh" -> HotMemoryManager.refresh();
+                    case "status" -> System.out.println("[HOT] " + HotMemoryManager.getStatus());
+                    default -> System.out.println("Неизвестная подкоманда :hot");
+                }
+            }
             case ":modules" -> {
                 List<String> names = ModuleLoader.listNames();
                 if (names.isEmpty()) {
@@ -1234,7 +1285,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     return;
                 }
                 if(parts[1].equalsIgnoreCase("news")) {
-                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : смерть проекта NeuralFloppy будущее не известно");
+                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : Были добавлены команды для управления кэшом имеются огромные проблемы с составом разработчиков");
                 }
 
             }
