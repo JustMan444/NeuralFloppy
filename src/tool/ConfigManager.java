@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ConfigManager {
-    private static final String CONFIG_FILE = "config.json";
+    private static final String CONFIG_FILE = "config.json"; //
     private static final Gson GSON = new Gson();
 
     // Значения по умолчанию (если файла нет)
