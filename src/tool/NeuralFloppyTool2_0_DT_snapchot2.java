@@ -1576,9 +1576,16 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     case "model" -> {
                         if (parts.length < 3) {
                             System.out.println("Укажи модель. Например: :embed model nomic-embed-text");
+                            System.out.println("Используй: :embed model <имя> [raw]");
+                            System.out.println("  :embed model nomic-embed-text      - nomic-embed-text-16k");
+                            System.out.println("  :embed model nomic-embed-text raw  - nomic-embed-text (без -16k)");
                             return;
                         }
                         String newModel = parts[2];
+                        boolean useRaw = parts.length > 3 && parts[3].equalsIgnoreCase("raw");
+                        if (!useRaw && !newModel.endsWith("-16k")) {
+                            newModel = EmbeddingEngine.getFullEmbedModelName(newModel);
+                        }
                         boolean hasModel = false;
                         try {
                             HttpClient client = HttpClient.newHttpClient();
