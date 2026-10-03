@@ -486,7 +486,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         return "Ошибка API: " + body;
     }
     static String askAPIStreamingThinking(String question) throws Exception {
-        String persona = currentPersona;
+        String prefix = HotMemoryManager.getPrefix();
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
         String prompt = String.format("""
@@ -496,7 +496,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         %s
 
         Ученик спросил: %s
-        Ответь как тот самый наставник:""", persona, context, question);
+        Ответь как тот самый наставник:""", prefix, context, question);
 
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
