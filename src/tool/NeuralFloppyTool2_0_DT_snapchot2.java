@@ -29,6 +29,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static final String ARCHIVE_DIR = "archive";
     private static String API_KEY = "sk-or-v1-....."; // API ключ
     private static double temperature = 0.7;
+    private static int maxTokens = 500;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
     private static BufferedReader reader;
@@ -68,6 +69,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static int memoryNewCount = 0;
 
     private static ModuleContext moduleContext;
+
+    private static int numCtx = 32768;
 
     private static String searchEngine = "classic"; // classic | vec | hybrid | manual
 
@@ -444,7 +447,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         "model", currentModel,
                         "messages", List.of(Map.of("role", "user", "content", prompt)),
                         "temperature", temperature,
-                        "max_tokens", 500
+                        "max_tokens", maxTokens
                 )), StandardCharsets.UTF_8))
                 .build();
 
@@ -588,7 +591,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         "model", currentModel,
                         "messages", List.of(Map.of("role", "user", "content", prompt)),
                         "temperature", temperature,
-                        "max_tokens", 500,
+                        "max_tokens", maxTokens,
                         "stream", true
                 )), StandardCharsets.UTF_8))
                 .build();
@@ -646,8 +649,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         "model", currentModel,
                         "prompt", prompt,
                         "stream", false,
-                        "options", Map.of("num_ctx", 32768),
-                        "temperature",temperature
+                        "options", Map.of("num_ctx", 32768, "num_predict", 2048, "temperature", temperature)
                 )), StandardCharsets.UTF_8))
                 .build();
 
@@ -696,7 +698,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         "model", currentModel,
                         "messages", List.of(Map.of("role", "user", "content", prompt)),
                         "temperature", temperature,
-                        "max_tokens", 500,
+                        "max_tokens", maxTokens,
                         "stream", true
                 )), StandardCharsets.UTF_8))
                 .build();
@@ -752,7 +754,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         "model", currentModel,
                         "prompt", prompt,
                         "stream", true,
-                        "options", Map.of("num_ctx", 32768)
+                        "options", Map.of("num_ctx", 32768, "num_predict", 2048, "temperature", temperature)
                 )), StandardCharsets.UTF_8))
                 .build();
 
@@ -839,8 +841,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         "model", currentModel,
                         "prompt", prompt,
                         "stream", true,
-                        "options", Map.of("num_ctx", 32768),
-                        "temperature",temperature
+                        "options", Map.of("num_ctx", 32768, "num_predict", 2048, "temperature", temperature)
                 )), StandardCharsets.UTF_8))
                 .build();
 
@@ -1449,6 +1450,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     JsonObject preset = GSON.fromJson(raw, JsonObject.class);
 
                     if (preset.has("temperature")) temperature = preset.get("temperature").getAsDouble();
+                    if (preset.has("max_tokens")) maxTokens = preset.get("max_tokens").getAsInt();
+                    if (preset.has("num_ctx")) numCtx = preset.get("num_ctx").getAsInt();
                     if (preset.has("stream")) streaming = preset.get("stream").getAsBoolean();
                     if (preset.has("embed_enabled")) embedEnabled = preset.get("embed_enabled").getAsBoolean();
                     if (preset.has("compress")) memoryAutoThreshold = preset.get("compress").getAsBoolean() ? 10 : 0;
