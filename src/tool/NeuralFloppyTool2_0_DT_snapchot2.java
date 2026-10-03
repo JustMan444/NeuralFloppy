@@ -27,7 +27,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
     private static final String ARCHIVE_DIR = "archive";
-    private static final String API_KEY = "sk-or-v1-....."; // API ключ
+    private static String API_KEY = "sk-or-v1-....."; // API ключ
     private static double temperature = 0.7;
     private static final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private static final Gson GSON = new Gson();
@@ -72,8 +72,11 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static String searchEngine = "classic"; // classic | vec | hybrid | manual
 
     public static void main(String[] args) throws Exception {
+
         ensureDirectoriesAndFiles();
         ModuleLoader.loadAll(Path.of("modules"));
+        ConfigManager.load();
+        API_KEY = ConfigManager.apiKey;
 
         ModuleLoader.register(new HelloModule());
         DatabaseManager.initDatabase();
