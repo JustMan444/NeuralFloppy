@@ -1032,12 +1032,12 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :persona auto <N>       - авто-обновление каждые N сообщений :persona auto ⚠️ Не рекомендуется при включённом cache hit. ⚠️ Сбрасывает кэш промта (cache miss ~$0.13). ⚠️ Использовать не чаще 100 сообщений.
                     :persona auto off       - отключить авто-обновление
                     :remember               - сжать последние 10 сообщений
-                    :memory migrate         - миграция JSON в SQLite
-                    :memory status          - состояние долгой памяти
-                    :memory search <текст>  - текстовый поиск по памяти
-                    :memory auto <N>        - авто-сжатие каждые N сообщений
-                    :memory purge <дни>     - удалить старые записи
-                    :memorн default <имя>   - установить дефолтную колонку памяти
+                    :memory migrate         - миграция JSON в SQLite (не работает)
+                    :memory status          - состояние долгой памяти (не работает)
+                    :memory search <текст>  - текстовый поиск по памяти (не работает)
+                    :memory auto <N>        - авто-сжатие каждые N сообщений (не работает)
+                    :memory purge <дни>     - удалить старые записи (не работает)
+                    :memorн default <имя>   - установить дефолтную колонку памяти (не работает)
                     :summarize              - сводка последних 20 сообщений
                     :import <файл>          - импорт JSON-диалогов
                     :think on|off           - размышление
@@ -1052,7 +1052,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :game list              - получить все колонки памяти (for easy mode in api)
                     :game memory <колонка>  -  создать колонку
                     :game clear <колонка>   - удалить данные из колонки
-                    :game export <колонка>  - экспортировать колонку 
+                    :game export <колонка>  - экспортировать колонку
                     :storage default|short|long|archive - выбрать тип архитектуру не рекомендуется для личного использования
                     :silent on|off          - только запись 
                     :compress on|off        - авто-сжатие
@@ -1070,7 +1070,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :hot freeze             - заморозить текущий префикс
                     :hot refresh            - пересобрать и применить префикс 
                     :hot status             - проверка статуса кэша
-                    
+                    :asktest                - проверка нового движка (временная команда)
                     :hot config <N>         -   регулирует размер префикса (ЧЕМ БОЛЬШЕ ТЕМ БОЛЬШЕ ДЕНЕГ ТРАТИТСЯ ВНАЧАЛЕ И ТЕМ МЕНЬШЕ В ДОЛГОСРОКЕ БОЛЬШИЕ ЗНАЧЕНИЯ ВЫГОДНО ДЛЯ ДЛИННЫХ СЕССИЙ)
                     
                    
@@ -1128,6 +1128,19 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         System.out.println("Не удалось очистить экран: " + e.getMessage());
                     }
                 }
+            }
+            case ":asktest" -> {
+                String q = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
+                AskEngine.AskRequest req = new AskEngine.AskRequest();
+                req.question = q;
+                req.mode = AskEngine.Mode.API;
+                AskEngine.AskResponse resp;
+                try {
+                    resp = AskEngine.ask(req);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                System.out.println("[ASKTEST] " + resp);
             }
             case ":test" -> {
                 System.out.println("=== Диагностика NeuralFloppy ===");
@@ -2379,6 +2392,11 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         Files.writeString(Path.of(filename), json);
         System.out.println("Сессия сохранена в " + filename);
     }
+    public static String getCurrentModel() { return currentModel; }
+    public static NeuralFloppyTool2_0_DT_snapchot2.Mode getCurrentMode() { return currentMode; }
+    public static double getTemperature() { return temperature; }
+    public static String getCurrentPersona() { return currentPersona; }
+    public static List<Message> getMessages() { return messages; }
 
     static Set<String> tokenize(String text) {
         return Arrays.stream(text.toLowerCase().split("[^а-яa-z0-9]+"))
