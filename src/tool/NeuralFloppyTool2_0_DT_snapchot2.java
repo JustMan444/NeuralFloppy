@@ -571,6 +571,17 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         String persona = currentPersona;
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
+        if (webSearchEnabled) {
+            if (ctx.isEmpty() || ctx.size() < 3) {
+                System.out.println("[Авто-поиск] Ищу в интернете: " + question);
+                try {
+                    String webResult = WebSearchEngine.search(question);
+                    if (!webResult.isBlank()) {
+                        context += "\n[Из интернета]: " + webResult;
+                    }
+                } catch (Exception e) { /* игнорируем */ }
+            }
+        }
         String prompt = String.format("""
             %s
 
@@ -632,6 +643,17 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         String persona = currentPersona;
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
+        if (webSearchEnabled) {
+            if (ctx.isEmpty() || ctx.size() < 3) {
+                System.out.println("[Авто-поиск] Ищу в интернете: " + question);
+                try {
+                    String webResult = WebSearchEngine.search(question);
+                    if (!webResult.isBlank()) {
+                        context += "\n[Из интернета]: " + webResult;
+                    }
+                } catch (Exception e) { /* игнорируем */ }
+            }
+        }
         String prompt = String.format("""
             %s
 
@@ -676,7 +698,17 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         String prefix = HotMemoryManager.getPrefix();
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
-
+        if (webSearchEnabled) {
+            if (ctx.isEmpty() || ctx.size() < 3) {
+                System.out.println("[Авто-поиск] Ищу в интернете: " + question);
+                try {
+                    String webResult = WebSearchEngine.search(question);
+                    if (!webResult.isBlank()) {
+                        context += "\n[Из интернета]: " + webResult;
+                    }
+                } catch (Exception e) { /* игнорируем */ }
+            }
+        }
         String prompt = String.format("""
     %s
 
@@ -737,6 +769,17 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         String persona = currentPersona;
         List<String> ctx = searchContext(question, contextSize);
         String context = String.join("\n---\n", ctx);
+        if (webSearchEnabled) {
+            if (ctx.isEmpty() || ctx.size() < 3) {
+                System.out.println("[Авто-поиск] Ищу в интернете: " + question);
+                try {
+                    String webResult = WebSearchEngine.search(question);
+                    if (!webResult.isBlank()) {
+                        context += "\n[Из интернета]: " + webResult;
+                    }
+                } catch (Exception e) { /* игнорируем */ }
+            }
+        }
         String prompt = String.format("""
         %s
 
