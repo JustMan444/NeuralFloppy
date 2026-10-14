@@ -1,0 +1,29 @@
+NeuralFloppy 2.0-DT — запуск
+
+1. Требования:
+
+    Java 17+
+
+    Ollama установлена (ollama serve)
+
+    Модели: ollama pull nomic-embed-text-16k (или -16k версии других)
+
+2. Сборка:
+text
+
+javac -encoding UTF-8 -cp "lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" src/tool/*.java -d out
+
+3. Настройка:
+Создай config.json в корне:
+json
+
+{
+  "api_key": "sk-or-v1-твой_ключ",
+  "api_url": "https://openrouter.ai/api/v1/chat/completions",
+  "default_model": "deepseek/deepseek-chat"
+}
+
+4. Запуск:
+text
+
+java -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED -cp "out;lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" tool.NeuralFloppyTool2_0_DT_snapchot2
