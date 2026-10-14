@@ -68,6 +68,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static int memoryAutoThreshold = 0;
     private static int memoryNewCount = 0;
 
+
     private static ModuleContext moduleContext;
 
     private static int numCtx = 32768;
@@ -135,6 +136,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             System.out.println("Эмбеддинги загружены: " + EmbeddingEngine.vectors.size() + " векторов.");
         }
         coreInstance = new NeuralFloppyTool2_0_DT_snapchot2();
+        AskEngine.setCore(coreInstance);
         GameAPI.setCore(coreInstance);
         moduleContext = new MainModuleSystem(coreInstance,"core");
         System.out.println("NeuralFloppy TOOL V1.9.3/*. " + messages.size() + " сообщений в индексе.");
@@ -142,6 +144,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         System.out.println("Введи :help для списка команд.\n");
 
         reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+
         while (true) {
             System.out.print("Ты: ");
             String q = reader.readLine();
@@ -168,7 +171,10 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
 
             String answer = "";
             System.out.print("\nИИ: ");
+            AskEngine.AskRequest request = new AskEngine.AskRequest();
+
             switch (currentMode) {
+
                 case API -> answer = streaming ? askAPIStreaming(q) : askAPI(q);
                 case LOCAL -> answer = streaming ? askLocalStreaming(q) : askLocal(q);
                 case MANUAL -> {

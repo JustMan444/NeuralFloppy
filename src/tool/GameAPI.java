@@ -211,6 +211,11 @@ public class GameAPI {
                 switch (format) {
                     case "observer":
                         core.saveToColumn(column, requestJson.toString(), "observer");
+                        try {
+                            SuperFastEngine.observe(column, requestJson);
+                        } catch (Exception e) {
+                            System.err.println("[GameAPI] observe error: " + e.getMessage());
+                        }
                         response.addProperty("status", "recorded");
                         break;
                     case "action-only":

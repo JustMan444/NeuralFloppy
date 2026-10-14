@@ -20,16 +20,22 @@ public class HotMemoryManager {
      * Собирает стабильный префикс. Если он уже заморожен — возвращает его же.
      * Иначе пересобирает из persona.txt и системных инструкций.
      */
-    public static String getPrefix() throws IOException {
+    public static String getPrefix() {
         if (frozen && frozenPrefix != null) {
             return frozenPrefix;
         }
 
         StringBuilder sb = new StringBuilder();
 
-        // 1. Персона — стабильна, если не менять в сессии
-        String persona = Files.readString(Path.of("persona.txt"), StandardCharsets.UTF_8);
-        sb.append(persona).append("\n\n");
+        try {
+            // 1. Персона — стабильна, если не менять в сессии
+            String persona = Files.readString(Path.of("persona.txt"), StandardCharsets.UTF_8);
+            sb.append(persona).append("\n\n");
+        } catch (IOException e) {
+            System.err.println("[HOT] persona.txt не прочитан: " + e.getMessage());
+            sb.append("[СИСТЕМА]\nТы — ИИ-наставник внутри NeuralFloppy.\n\n");
+        }
+
 
         // 2. Системные инструкции — фиксированные, не зависят от запроса
         sb.append("Ты — наставник. Отвечай по делу, используй метафоры, ");

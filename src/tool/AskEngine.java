@@ -17,9 +17,9 @@ public class AskEngine {
     private static final Gson GSON = new Gson();
 
     // Ссылка на ядро (для saveMessage / saveToColumn — они instance-методы)
-    private static NeuralFloppyTool2_0_DT_snapchot2 core;
+    private static NeuralFloppyCore core;
 
-    public static void setCore(NeuralFloppyTool2_0_DT_snapchot2 c) {
+    public static void setCore(NeuralFloppyCore c) {
         core = c;
     }
 
