@@ -29,3 +29,20 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Comtolition
+target/
+*.class
+
+
+# Локальные базы и логи
+*.db
+*.db-journal
+chat.ndjson
+data/
+archive/
