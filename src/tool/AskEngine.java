@@ -10,13 +10,11 @@ import java.util.*;
 
 /**
  * AskEngine — единый вход для всех LLM-запросов в NeuralFloppy.
- * Заменяет зоопарк методов askAPI/askLocal/askAPIStreaming/askLocalStreaming.
  */
 public class AskEngine {
 
     private static final Gson GSON = new Gson();
 
-    // Ссылка на ядро (для saveMessage / saveToColumn — они instance-методы)
     private static NeuralFloppyCore core;
 
     public static void setCore(NeuralFloppyCore c) {
@@ -74,23 +72,28 @@ public class AskEngine {
         List<String> ctx = collectContext(req);
         resp.fromCache = !ctx.isEmpty();
 
-        // 3. Промпт
-        String prompt = buildPrompt(req, ctx);
+        // 3. Сборка массива messages (Warm + Cold + Question)
+        List<Map<String, String>> messages = WarmMemory.buildMessages(
+                req.question, ctx, NeuralFloppyTool2_0_DT_snapchot2.getWarmTokens() // WARM_TOKENS
+        );
 
-        // 4. Размышления
+        // 4. Размышления (адаптировано под массив)
         if (req.useThinking) {
             String thoughts = runThinking(req.question, mode);
-            if (!thoughts.isBlank()) {
-                prompt = injectThoughts(prompt, thoughts);
+            if (thoughts != null && !thoughts.isBlank()) {
+                // Добавляем мысли в последнее сообщение user
+                Map<String, String> lastMsg = messages.get(messages.size() - 1);
+                String newContent = "Размышления:\n" + thoughts + "\n\nТеперь ответь на вопрос:\n" + lastMsg.get("content");
+                messages.set(messages.size() - 1, Map.of("role", "user", "content", newContent));
             }
         }
 
         // 5. Вызов LLM
         String answer;
         switch (mode) {
-            case API    -> answer = callApi(prompt, req, resp);
-            case LOCAL  -> answer = callLocal(prompt, req, resp);
-            case MANUAL -> answer = callManual(prompt);
+            case API    -> answer = callApi(messages, req, resp);
+            case LOCAL  -> answer = callLocal(messages, req, resp);
+            case MANUAL -> answer = callManual(buildManualPrompt(messages));
             default -> throw new IllegalStateException("Unknown mode: " + mode);
         }
 
@@ -130,35 +133,8 @@ public class AskEngine {
             }
         } catch (Exception e) {
             System.err.println("[ASK] Ошибка поиска контекста: " + e.getMessage());
-            return List.of();
+            return new ArrayList<>(); // Возвращаем пустой, но изменяемый список
         }
-    }
-
-    // ==================== ПРОМТ ====================
-    private static String buildPrompt(AskRequest req, List<String> ctx) throws Exception {
-        StringBuilder sb = new StringBuilder();
-
-        // Слой 1: HotMemory (кэшируемый)
-        if (req.useHotMemory) {
-            sb.append(HotMemoryManager.getPrefix()).append("\n\n");
-        } else {
-            sb.append(NeuralFloppyTool2_0_DT_snapchot2.getCurrentPersona()).append("\n\n");
-        }
-
-        // Слой 2: Вопрос
-        sb.append("Вопрос: ").append(req.question).append("\n\n");
-
-        // Слой 3: Контекст
-        if (!ctx.isEmpty()) {
-            sb.append("Контекст из памяти:\n");
-            sb.append(String.join("\n---\n", ctx));
-            sb.append("\n\n");
-        }
-
-        // Слой 4: Инструкция
-        sb.append("Ответь как наставник. Кратко, по делу.");
-
-        return sb.toString();
     }
 
     // ==================== РАЗМЫШЛЕНИЯ ====================
@@ -177,19 +153,38 @@ public class AskEngine {
         }
     }
 
-    private static String injectThoughts(String prompt, String thoughts) {
-        return "Размышления:\n" + thoughts + "\n\nТеперь ответь:\n" + prompt;
+    // ==================== MANUAL ====================
+    private static String buildManualPrompt(List<Map<String, String>> messages) {
+        StringBuilder sb = new StringBuilder();
+        for (var m : messages) {
+            sb.append("[").append(m.get("role").toUpperCase()).append("]\n")
+                    .append(m.get("content")).append("\n\n");
+        }
+        return sb.toString();
+    }
+
+    private static String callManual(String prompt) {
+        System.out.println("===== СКОПИРУЙ ЭТО В МОДЕЛЬ =====");
+        System.out.println(prompt);
+        System.out.println("=================================");
+        System.out.print("Вставь ответ: ");
+        try {
+            return new java.io.BufferedReader(new java.io.InputStreamReader(
+                    System.in, StandardCharsets.UTF_8)).readLine();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     // ==================== API ====================
-    private static String callApi(String prompt, AskRequest req, AskResponse resp) throws Exception {
+    private static String callApi(List<Map<String, String>> messages, AskRequest req, AskResponse resp) throws Exception {
         HttpClient client = HttpClient.newHttpClient();
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", NeuralFloppyTool2_0_DT_snapchot2.getCurrentModel());
-        body.put("messages", List.of(Map.of("role", "user", "content", prompt)));
+        body.put("messages", messages); // ← ПЕРЕДАЕМ МАССИВ
         body.put("temperature", NeuralFloppyTool2_0_DT_snapchot2.getTemperature());
-        body.put("max_tokens", 2000);
+        body.put("max_tokens", NeuralFloppyTool2_0_DT_snapchot2.getMaxTokens());
         if (req.streamTo != null) body.put("stream", true);
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -257,23 +252,24 @@ public class AskEngine {
         return full.toString();
     }
 
-    // ==================== LOCAL ====================
-    private static String callLocal(String prompt, AskRequest req, AskResponse resp) throws Exception {
+    // ==================== LOCAL (OLLAMA) ====================
+    private static String callLocal(List<Map<String, String>> messages, AskRequest req, AskResponse resp) throws Exception {
         NeuralFloppyTool2_0_DT_snapchot2.ensureOllamaRunning();
         HttpClient client = HttpClient.newHttpClient();
 
         Map<String, Object> options = new LinkedHashMap<>();
         options.put("num_ctx", 32768);
         options.put("temperature", NeuralFloppyTool2_0_DT_snapchot2.getTemperature());
+        options.put("num_predict", NeuralFloppyTool2_0_DT_snapchot2.getMaxTokens());
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", NeuralFloppyTool2_0_DT_snapchot2.getCurrentModel());
-        body.put("prompt", prompt);
+        body.put("messages", messages); // ← ПЕРЕДАЕМ МАССИВ
         body.put("stream", req.streamTo != null);
         body.put("options", options);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:11434/api/generate"))
+                .uri(URI.create("http://localhost:11434/api/chat")) // ← ЭНДПОИНТ CHAT
                 .header("Content-Type", "application/json; charset=UTF-8")
                 .POST(HttpRequest.BodyPublishers.ofString(
                         GSON.toJson(body), StandardCharsets.UTF_8))
@@ -289,8 +285,8 @@ public class AskEngine {
             while ((line = in.readLine()) != null) {
                 try {
                     JsonObject json = GSON.fromJson(line, JsonObject.class);
-                    if (json.has("response")) {
-                        String chunk = json.get("response").getAsString();
+                    if (json.has("message")) {
+                        String chunk = json.getAsJsonObject("message").get("content").getAsString();
                         req.streamTo.write(chunk.getBytes(StandardCharsets.UTF_8));
                         req.streamTo.flush();
                         full.append(chunk);
@@ -301,27 +297,25 @@ public class AskEngine {
             return full.toString();
         } else {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
-            if (json.has("response")) return json.get("response").getAsString();
-            return "Ошибка Ollama: " + response.body();
+            String rawBody = response.body();
+
+            if (rawBody.contains("exceed_context_size") && req.contextSize > 50) {
+                req.contextSize -= 50;
+                System.out.println("[UAZ] Уменьшаю контекст до " + req.contextSize);
+                return ask(req).answer;
+            }
+
+            JsonObject json = GSON.fromJson(rawBody, JsonObject.class);
+            if (json.has("message")) {
+                JsonElement r = json.getAsJsonObject("message").get("content");
+                if (r != null && !r.isJsonNull()) return r.getAsString();
+                return "Локальная модель вернула пустой ответ.";
+            }
+            return "Ошибка Ollama: " + rawBody;
         }
     }
 
-    // ==================== MANUAL ====================
-    private static String callManual(String prompt) {
-        System.out.println("===== СКОПИРУЙ ЭТО В МОДЕЛЬ =====");
-        System.out.println(prompt);
-        System.out.println("=================================");
-        System.out.print("Вставь ответ: ");
-        try {
-            return new java.io.BufferedReader(new java.io.InputStreamReader(
-                    System.in, StandardCharsets.UTF_8)).readLine();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    // ==================== СОХРАНЕНИЕ ====================
+    // ==================== СОХРАНЕНИЕ И ЛОГИ ====================
     private static void saveToMemory(AskRequest req, String answer) {
         if (core == null) {
             System.err.println("[ASK] core не установлен — сохранение пропущено");
@@ -338,7 +332,6 @@ public class AskEngine {
         }
     }
 
-    // ==================== ЛОГ ====================
     private static void logUsage(AskRequest req, AskResponse resp) {
         StringBuilder sb = new StringBuilder("[CACHE] ");
         if (resp.cacheHitTokens > 0 || resp.cacheMissTokens > 0) {

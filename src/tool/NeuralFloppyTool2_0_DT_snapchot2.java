@@ -73,6 +73,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
 
     private static int numCtx = 32768;
 
+    private static int warm_tokens = 32000;
+
     private static String searchEngine = "classic"; // classic | vec | hybrid | manual
 
     public static void main(String[] args) throws Exception {
@@ -175,7 +177,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
 
             switch (currentMode) {
 
-                case API -> answer = streaming ? askAPIStreaming(q) : askAPI(q);
+                case API -> answer = streaming ? askAPIStreaming(q) : askApibutAskEngine(q, AskEngine.Mode.API);
                 case LOCAL -> answer = streaming ? askLocalStreaming(q) : askLocal(q);
                 case MANUAL -> {
                     String prompt = buildPrompt(q);
@@ -406,6 +408,18 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             return "Модель не ответила.";
         }
         return "Ошибка API: " + body;
+    }
+    static String askApibutAskEngine(String question,AskEngine.Mode mode) {
+        AskEngine.AskRequest request = new AskEngine.AskRequest();
+        request.mode = mode;
+        request.question = question;
+        AskEngine.AskResponse response = null;
+        try {
+            response = AskEngine.ask(request);
+        } catch (Exception e) {
+
+        }
+        return response.answer;
     }
     // ================== API ==================
     static String askAPI(String question) throws Exception {
@@ -1060,12 +1074,12 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :game clear <колонка>   - удалить данные из колонки
                     :game export <колонка>  - экспортировать колонку
                     :storage default|short|long|archive - выбрать тип архитектуру не рекомендуется для личного использования
-                    :silent on|off          - только запись 
+                    :silent on|off          - только запись
                     :compress on|off        - авто-сжатие
                     :context dynamic|static -заморозить контекст
                     :test                   - тестирование всех систем
                     :clear                  - очистить консоль
-                    :clear session          - сбрасывание активного контекста 
+                    :clear session          - сбрасывание активного контекста
                     :modules
                     :module enable <hello>
                     :module disable <hello>
@@ -1077,7 +1091,10 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     :hot refresh            - пересобрать и применить префикс 
                     :hot status             - проверка статуса кэша
                     :asktest                - проверка нового движка (временная команда)
-                    :hot config <N>         -   регулирует размер префикса (ЧЕМ БОЛЬШЕ ТЕМ БОЛЬШЕ ДЕНЕГ ТРАТИТСЯ ВНАЧАЛЕ И ТЕМ МЕНЬШЕ В ДОЛГОСРОКЕ БОЛЬШИЕ ЗНАЧЕНИЯ ВЫГОДНО ДЛЯ ДЛИННЫХ СЕССИЙ)
+                    :hot config <N>         - регулирует размер префикса (ЧЕМ БОЛЬШЕ ТЕМ БОЛЬШЕ ДЕНЕГ ТРАТИТСЯ ВНАЧАЛЕ И ТЕМ МЕНЬШЕ В ДОЛГОСРОКЕ БОЛЬШИЕ ЗНАЧЕНИЯ ВЫГОДНО ДЛЯ ДЛИННЫХ СЕССИЙ)
+                    :warmtokens <N>         - Настроить количество доступных токенов для теплой памяти (дефолт 32к)
+                    :contextsize            - Настроить количество доступных токенов для холодной памяти и ниже
+                    :url                    - Сменить url (поддерживаются лишь OpenAi форматы!)
                     
                    
             """); // :NeuralFloppy           -узнать новости проекта
@@ -1309,7 +1326,63 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     default -> System.out.println("Неизвестный режим хранения.");
                 }
             }
+            // ================== УПРАВЛЕНИЕ ПАМЯТЬЮ И СЕТЬЮ ==================
 
+            case ":warmtokens" -> {
+                if (parts.length < 2) {
+                    System.out.println("Текущий лимит теплой памяти: " + warm_tokens + " токенов.");
+                    System.out.println("Используй: :warmtokens <число>");
+                    return;
+                }
+                try {
+                    int val = Integer.parseInt(parts[1]);
+                    if (val < 1000) {
+                        System.out.println("Слишком мало. Минимум 1000 токенов.");
+                        return;
+                    }
+                    warm_tokens = val;
+                    System.out.println("[WARM] Лимит теплой памяти установлен на " + warm_tokens + " токенов.");
+                } catch (NumberFormatException e) {
+                    System.out.println("Укажи целое число. Например: :warmtokens 16000");
+                }
+            }
+
+            case ":contextsize" -> {
+                if (parts.length < 2) {
+                    System.out.println("Текущий размер поиска (cold): " + contextSize + " фрагментов.");
+                    System.out.println("Используй: :contextsize <число> (рекомендуется 5-50)");
+                    return;
+                }
+                try {
+                    int val = Integer.parseInt(parts[1]);
+                    if (val < 1 || val > 100) {
+                        System.out.println("Допустимый диапазон: от 1 до 100.");
+                        return;
+                    }
+                    contextSize = val;
+                    System.out.println("[COLD] Размер поиска установлен на " + contextSize + " фрагментов.");
+                } catch (NumberFormatException e) {
+                    System.out.println("Укажи целое число. Например: :contextsize 20");
+                }
+            }
+
+            case ":url" -> {
+                if (parts.length < 2) {
+                    System.out.println("Текущий API URL: " + ConfigManager.apiUrl);
+                    System.out.println("Используй: :url <адрес>");
+                    return;
+                }
+                // Собираем всю строку, если в URL есть пробелы (маловероятно, но на всякий случай)
+                String newUrl = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
+                if (!newUrl.startsWith("http://") && !newUrl.startsWith("https://")) {
+                    System.out.println("Ошибка: URL должен начинаться с http:// или https://");
+                    return;
+                }
+
+                ConfigManager.set("api_url", newUrl);
+                System.out.println("[API] URL сервера изменен на: " + newUrl);
+                System.out.println("Если вы переключились на локальную модель, не забудьте сменить :mode local");
+            }
             case ":silent" -> {
                 if (parts.length < 2) {
                     System.out.println("Используй: :silent on|off");
@@ -1324,7 +1397,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     return;
                 }
                 if(parts[1].equalsIgnoreCase("news")) {
-                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : Были добавлены команды для управления кэшом имеются огромные проблемы с составом разработчиков");
+                    System.out.println("Новости проекта можно узнать по ссылке : https://github.com/JustMan444/NeuralFloppy : Что нового в NeuralFloppyTool2_0_DT_snapchot2 ? : Была добавлена теплая память! (в разработке)");
                 }
 
             }
@@ -2418,6 +2491,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     public boolean isModuleEnabled(String name) {
         return ModuleLoader.isEnabled(name);
     }
+    public static int getMaxTokens() { return maxTokens; }
+    public static int getWarmTokens() { return warm_tokens; }
 
     @Override
     public List<String> listModules() {

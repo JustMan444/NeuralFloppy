@@ -17,6 +17,8 @@ public class ConfigManager {
     public static String apiKey = "";
     public static String apiUrl = "https://openrouter.ai/api/v1/chat/completions";
     public static String defaultModel = "openrouter/free";
+    public static int warmTokens = 32000;
+    public static int contextSize = 10;
 
     public static void load() {
         Path path = Path.of(CONFIG_FILE);
