@@ -170,6 +170,11 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 System.out.println("Ошибка записи в БД: " + e.getMessage());
             }
             addToIndex(userMsg, messages.size() - 1);
+            if (silentMode) {
+              //  System.out.println("[SILENT] Сообщение записано в память. Генерация ответа пропущена.");
+                System.out.println("[SILENT] Сообщение записано.");
+                continue; // Пропускаем вызов ИИ и идем к следующему вводу
+            }
 
             String answer = "";
             System.out.print("\nИИ: ");
@@ -840,20 +845,42 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     }
     static class AskHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
-            String query = exchange.getRequestURI().getQuery().split("=")[1];
-            query = java.net.URLDecoder.decode(query, StandardCharsets.UTF_8);
+            String queryStr = exchange.getRequestURI().getQuery();
+            String query = "";
+            if (queryStr != null) {
+                for (String param : queryStr.split("&")) {
+                    if (param.startsWith("q=")) {
+                        query = java.net.URLDecoder.decode(param.substring(2), StandardCharsets.UTF_8);
+                        break;
+                    }
+                }
+            }
+            // ===================================
+
             String answer = "";
             try {
                 // Сохраняем вопрос пользователя
                 Message userMsg = new Message("USER", query, Instant.now().getEpochSecond());
                 messages.add(userMsg);
                 if (autoSave) appendToNdjson(userMsg);
+                addToIndex(userMsg, messages.size() - 1);
                 try {
                     DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
                 } catch (Exception e) {
-                    System.out.println("Ошибка записи в БД: " + e.getMessage());
+                    System.out.println("Ошибка записи в БД (web user): " + e.getMessage());
                 }
-                addToIndex(userMsg, messages.size() - 1);
+
+                // === 2. ПРОВЕРКА SILENT РЕЖИМА ===
+                if (silentMode) {
+                    answer = "[SILENT] Сообщение записано в память. Ответ ИИ пропущен.";
+                    byte[] bytes = answer.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                    return; // Выходим, не вызывая ИИ
+                }
+              //  addToIndex(userMsg, messages.size() - 1);
 
                 switch (currentMode) {
                     case API -> answer = askAPI(query);
@@ -873,6 +900,15 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 addToIndex(assistantMsg, messages.size() - 1);
             } catch (Exception e) {
                 answer = "Ошибка: " + e.getMessage();
+            }
+            if (silentMode) {
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
+                exchange.sendResponseHeaders(200, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write("data: [SILENT] Сообщение записано в память. Ответ ИИ пропущен.\n\n".getBytes(StandardCharsets.UTF_8));
+                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+                os.close();
+                return; // Выходим, не вызывая ИИ
             }
             byte[] bytes = answer.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
@@ -928,15 +964,41 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     }
     static class AskStreamHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
+            // === ИСПРАВЛЕННЫЙ ПАРСИНГ URL ===
             String query = exchange.getRequestURI().getQuery();
-            String q = java.net.URLDecoder.decode(query.split("=")[1], StandardCharsets.UTF_8);
+            String q = "";
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    if (param.startsWith("q=")) {
+                        // Отрезаем "q=" (2 символа) и декодируем
+                        q = java.net.URLDecoder.decode(param.substring(2), StandardCharsets.UTF_8);
+                        break;
+                    }
+                }
+            }
+            // =================================
 
-            // Сохраняем вопрос пользователя
+            // Сохраняем вопрос пользователя (теперь q будет чистым!)
             Message userMsg = new Message("USER", q, Instant.now().getEpochSecond());
             messages.add(userMsg);
             if (autoSave) appendToNdjson(userMsg);
             addToIndex(userMsg, messages.size() - 1);
+            try {
+                DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
+            } catch (Exception e) {
+                System.out.println("Ошибка записи в БД (web ai): " + e.getMessage());
+            }
 
+            // Проверка Silent режима
+            if (silentMode) {
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
+                exchange.sendResponseHeaders(200, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write("data: [SILENT] Сообщение записано в память. Ответ ИИ пропущен.\n\n".getBytes(StandardCharsets.UTF_8));
+                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+                os.close();
+                return;
+            }
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");
             exchange.getResponseHeaders().set("Connection", "keep-alive");
@@ -959,6 +1021,11 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     messages.add(assistantMsg);
                     if (autoSave) appendToNdjson(assistantMsg);
                     addToIndex(assistantMsg, messages.size() - 1);
+                    try {
+                        DatabaseManager.saveMessageToDb(assistantMsg.role, assistantMsg.content, assistantMsg.ts);
+                    } catch (Exception e) {
+                        System.out.println("Ошибка записи в БД (web ai): " + e.getMessage());
+                    }
                 }
 
                 // Сигнал завершения
