@@ -1,4 +1,4 @@
-package com.example.neuralfloppy.memory.coldMemory;
+package com.example.neuralfloppy.memory.cold;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;

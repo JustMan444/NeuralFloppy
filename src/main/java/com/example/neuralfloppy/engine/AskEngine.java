@@ -1,7 +1,7 @@
-package com.example.neuralfloppy.Engine;
+package com.example.neuralfloppy.engine;
 
 import com.example.neuralfloppy.config.ConfigManager;
-import com.example.neuralfloppy.memory.warmMemory.WarmMemory;
+import com.example.neuralfloppy.memory.warm.WarmMemory;
 import com.example.neuralfloppy.tool.NeuralFloppyCore;
 import com.example.neuralfloppy.tool.NeuralFloppyTool2_0_DT_snapchot2;
 import com.google.gson.*;

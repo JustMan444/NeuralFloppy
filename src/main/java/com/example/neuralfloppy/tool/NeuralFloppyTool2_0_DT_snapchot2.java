@@ -1,15 +1,15 @@
 package com.example.neuralfloppy.tool;
 
-import com.example.neuralfloppy.Engine.AskEngine;
+import com.example.neuralfloppy.engine.AskEngine;
 import com.example.neuralfloppy.HelloModule;
 import com.example.neuralfloppy.config.ConfigManager;
 import com.example.neuralfloppy.controller.GameAPI;
 import com.example.neuralfloppy.controller.WebServer;
 import com.example.neuralfloppy.entity.records.Episode;
 import com.example.neuralfloppy.memory.api.ColumnMemory;
-import com.example.neuralfloppy.memory.coldMemory.MemoryManager;
-import com.example.neuralfloppy.memory.hotMemory.HotMemoryManager;
-import com.example.neuralfloppy.memory.veryColdMemory.DatabaseManager;
+import com.example.neuralfloppy.memory.cold.MemoryManager;
+import com.example.neuralfloppy.memory.hot.HotMemoryManager;
+import com.example.neuralfloppy.memory.verycold.DatabaseManager;
 import com.example.neuralfloppy.module.ModuleContext;
 import com.example.neuralfloppy.module.ModuleLoader;
 import com.example.neuralfloppy.module.system.MainModuleSystem;

@@ -1,4 +1,4 @@
-package com.example.neuralfloppy.memory.hotMemory;
+package com.example.neuralfloppy.memory.hot;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

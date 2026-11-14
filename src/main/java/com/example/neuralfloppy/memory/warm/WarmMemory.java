@@ -1,6 +1,6 @@
-package com.example.neuralfloppy.memory.warmMemory;
+package com.example.neuralfloppy.memory.warm;
 
-import com.example.neuralfloppy.memory.hotMemory.HotMemoryManager;
+import com.example.neuralfloppy.memory.hot.HotMemoryManager;
 import com.example.neuralfloppy.tool.NeuralFloppyTool2_0_DT_snapchot2;
 import com.example.neuralfloppy.tool.TokenCounter;
 

@@ -1,4 +1,4 @@
-package com.example.neuralfloppy.memory.veryColdMemory;
+package com.example.neuralfloppy.memory.verycold;
 
 import java.nio.ByteBuffer;
 

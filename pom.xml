@@ -8,7 +8,7 @@
 <modelVersion>4.0.0</modelVersion>
 
 <!-- Координаты проекта (GAV: GroupId, ArtifactId, Version) -->
-<groupId>com.example</groupId>
+<groupId>com.justmun444</groupId>
 <artifactId>neuralfloppy</artifactId>
 <version>2.0-BETA</version>
 
