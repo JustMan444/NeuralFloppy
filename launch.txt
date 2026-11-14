@@ -11,7 +11,7 @@ NeuralFloppy 2.0-DT — запуск
 2. Сборка:
 text
 
-javac -encoding UTF-8 -cp "lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" src/tool/*.java -d out
+javac -encoding UTF-8 -cp lib/* src/tool/*.java -d out
 
 3. Настройка:
 Создай config.json в корне:
@@ -26,4 +26,4 @@ json
 4. Запуск:
 text
 
-java -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED -cp "out;lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar" tool.NeuralFloppyTool2_0_DT_snapchot2
+java -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED -cp "out;lib/gson-2.10.1.jar;lib/sqlite-jdbc-3.45.0.0.jar;lib/slf4j-api-2.0.9.jar;lib/slf4j-simple-2.0.9.jar;jtokkit-1.1.0.jar;" tool.NeuralFloppyTool2_0_DT_snapchot2
