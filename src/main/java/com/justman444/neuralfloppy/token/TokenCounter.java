@@ -1,4 +1,4 @@
-package com.justman444.neuralfloppy.tool;
+package com.justman444.neuralfloppy.token;
 
 import com.knuddels.jtokkit.Encodings;
 import com.knuddels.jtokkit.api.Encoding;

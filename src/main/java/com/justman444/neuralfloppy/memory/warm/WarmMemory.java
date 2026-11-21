@@ -2,7 +2,7 @@ package com.justman444.neuralfloppy.memory.warm;
 
 import com.justman444.neuralfloppy.memory.hot.HotMemoryManager;
 import com.justman444.neuralfloppy.tool.NeuralFloppyTool2_0_DT_snapchot2;
-import com.justman444.neuralfloppy.tool.TokenCounter;
+import com.justman444.neuralfloppy.token.TokenCounter;
 
 import java.util.*;
 
