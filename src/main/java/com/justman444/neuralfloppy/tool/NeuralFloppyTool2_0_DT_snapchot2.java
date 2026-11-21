@@ -1,5 +1,6 @@
 package com.justman444.neuralfloppy.tool;
 
+import com.justman444.neuralfloppy.command.HelpCommandHandler;
 import com.justman444.neuralfloppy.engine.AskEngine;
 import com.justman444.neuralfloppy.HelloModule;
 import com.justman444.neuralfloppy.config.ConfigManager;
@@ -22,7 +23,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.*;
-import java.net.Socket;
 import java.net.URI;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
@@ -35,12 +35,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.*;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import lombok.Data;
+import lombok.Getter;
 
-import java.net.InetSocketAddress;
 import java.net.URLEncoder;
 
 import static com.justman444.neuralfloppy.controller.WebServer.startWebServer;
 
+@Data
 public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
     private static final String PERSONA_FILE = "persona.txt";
     private static final String NDJSON_FILE = "chat.ndjson";
@@ -806,7 +808,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         }
         return fullAnswer.toString();
     }
-
+    //TODO: убрать эти методы в другие классы или создать универсальный
     static String askLocalStreamingToWeb(String question, OutputStream os) throws Exception {
         ensureOllamaRunning();
         String persona = currentPersona;
@@ -861,246 +863,6 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         }
         return fullAnswer.toString();
     }
-    public static class AskHandler implements HttpHandler {
-        public void handle(HttpExchange exchange) throws IOException {
-            String queryStr = exchange.getRequestURI().getQuery();
-            String query = "";
-            if (queryStr != null) {
-                for (String param : queryStr.split("&")) {
-                    if (param.startsWith("q=")) {
-                        query = java.net.URLDecoder.decode(param.substring(2), StandardCharsets.UTF_8);
-                        break;
-                    }
-                }
-            }
-            // ===================================
-
-            String answer = "";
-            try {
-                // Сохраняем вопрос пользователя
-                Message userMsg = new Message("USER", query, Instant.now().getEpochSecond());
-                messages.add(userMsg);
-                if (autoSave) appendToNdjson(userMsg);
-                addToIndex(userMsg, messages.size() - 1);
-                try {
-                    DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
-                } catch (Exception e) {
-                    System.out.println("Ошибка записи в БД (web user): " + e.getMessage());
-                }
-
-                // === 2. ПРОВЕРКА SILENT РЕЖИМА ===
-                if (silentMode) {
-                    answer = "[SILENT] Сообщение записано в память. Ответ ИИ пропущен.";
-                    byte[] bytes = answer.getBytes(StandardCharsets.UTF_8);
-                    exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
-                    exchange.sendResponseHeaders(200, bytes.length);
-                    exchange.getResponseBody().write(bytes);
-                    exchange.close();
-                    return; // Выходим, не вызывая ИИ
-                }
-              //  addToIndex(userMsg, messages.size() - 1);
-
-                switch (currentMode) {
-                    case API -> answer = askAPI(query);
-                    case LOCAL -> answer = askLocal(query);
-                    case MANUAL -> answer = "Ручной режим недоступен в веб-интерфейсе.";
-                }
-
-                // Сохраняем ответ
-                Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
-                messages.add(assistantMsg);
-                if (autoSave) appendToNdjson(assistantMsg);
-                try {
-                    DatabaseManager.saveMessageToDb(assistantMsg.role, assistantMsg.content, assistantMsg.ts);
-                } catch (Exception e) {
-                    System.out.println("Ошибка записи в БД: " + e.getMessage());
-                }
-                addToIndex(assistantMsg, messages.size() - 1);
-            } catch (Exception e) {
-                answer = "Ошибка: " + e.getMessage();
-            }
-            if (silentMode) {
-                exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
-                exchange.sendResponseHeaders(200, 0);
-                OutputStream os = exchange.getResponseBody();
-                os.write("data: [SILENT] Сообщение записано в память. Ответ ИИ пропущен.\n\n".getBytes(StandardCharsets.UTF_8));
-                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
-                os.close();
-                return; // Выходим, не вызывая ИИ
-            }
-            byte[] bytes = answer.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.close();
-        }
-    }
-
-    static String askLocalStreaming(String question) throws Exception {
-        ensureOllamaRunning();
-        String persona = currentPersona;
-        List<String> ctx = searchContext(question, contextSize);
-        String context = String.join("\n---\n", ctx);
-        String prompt = String.format("""
-            %s
-
-            Вот история твоего общения с учеником:
-            %s
-
-            Ученик спросил: %s
-            Ответь как тот самый наставник:""", persona, context, question);
-
-        HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:11434/api/generate"))
-                .header("Content-Type", "application/json; charset=UTF-8")
-                .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
-                        "model", currentModel,
-                        "prompt", prompt,
-                        "stream", true,
-                        "options", Map.of("num_ctx", 32768, "num_predict", 2048, "temperature", temperature)
-                )), StandardCharsets.UTF_8))
-                .build();
-
-        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
-        StringBuilder fullAnswer = new StringBuilder();
-        String line;
-        while ((line = in.readLine()) != null) {
-            try {
-                JsonObject json = GSON.fromJson(line, JsonObject.class);
-                if (json.has("response")) {
-                    String chunk = json.get("response").getAsString();
-                    System.out.print(chunk);
-                    fullAnswer.append(chunk);
-                }
-                if (json.has("done") && json.get("done").getAsBoolean()) break;
-            } catch (Exception e) {}
-        }
-        System.out.println();
-        return fullAnswer.toString();
-    }
-    public static class AskStreamHandler implements HttpHandler {
-        public void handle(HttpExchange exchange) throws IOException {
-            // === ИСПРАВЛЕННЫЙ ПАРСИНГ URL ===
-            String query = exchange.getRequestURI().getQuery();
-            String q = "";
-            if (query != null) {
-                for (String param : query.split("&")) {
-                    if (param.startsWith("q=")) {
-                        // Отрезаем "q=" (2 символа) и декодируем
-                        q = java.net.URLDecoder.decode(param.substring(2), StandardCharsets.UTF_8);
-                        break;
-                    }
-                }
-            }
-            // =================================
-
-            // Сохраняем вопрос пользователя (теперь q будет чистым!)
-            Message userMsg = new Message("USER", q, Instant.now().getEpochSecond());
-            messages.add(userMsg);
-            if (autoSave) appendToNdjson(userMsg);
-            addToIndex(userMsg, messages.size() - 1);
-            try {
-                DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
-            } catch (Exception e) {
-                System.out.println("Ошибка записи в БД (web ai): " + e.getMessage());
-            }
-
-            // Проверка Silent режима
-            if (silentMode) {
-                exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
-                exchange.sendResponseHeaders(200, 0);
-                OutputStream os = exchange.getResponseBody();
-                os.write("data: [SILENT] Сообщение записано в память. Ответ ИИ пропущен.\n\n".getBytes(StandardCharsets.UTF_8));
-                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
-                os.close();
-                return;
-            }
-            exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
-            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
-            exchange.getResponseHeaders().set("Connection", "keep-alive");
-            exchange.sendResponseHeaders(200, 0);
-
-            OutputStream os = exchange.getResponseBody();
-            String answer = "";
-            try {
-                if (currentMode == Mode.API) {
-                    answer = askAPIStreamingToWeb(q, os);
-                } else if (currentMode == Mode.LOCAL) {
-                    answer = askLocalStreamingToWeb(q, os);
-                } else {
-                    os.write("data: Ручной режим не поддерживает стриминг.\n\n".getBytes(StandardCharsets.UTF_8));
-                }
-
-                // Сохраняем ответ (полный текст, собранный из стрима)
-                if (!answer.isBlank()) {
-                    Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
-                    messages.add(assistantMsg);
-                    if (autoSave) appendToNdjson(assistantMsg);
-                    addToIndex(assistantMsg, messages.size() - 1);
-                    try {
-                        DatabaseManager.saveMessageToDb(assistantMsg.role, assistantMsg.content, assistantMsg.ts);
-                    } catch (Exception e) {
-                        System.out.println("Ошибка записи в БД (web ai): " + e.getMessage());
-                    }
-                }
-
-                // Сигнал завершения
-                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
-            } catch (Exception e) {
-                os.write(("data: Ошибка: " + e.getMessage() + "\n\n").getBytes(StandardCharsets.UTF_8));
-            } finally {
-                os.close();
-            }
-        }
-    }
-    @Override
-    public List<String> findContext(String query) {
-        return searchContext(query, contextSize);
-    }
-
-    @Override
-    public void saveMessage(String role, String content) {
-        try {
-            Message msg = new Message(role, content, Instant.now().getEpochSecond());
-            messages.add(msg);
-            if (autoSave) appendToNdjson(msg);
-            try {
-                DatabaseManager.saveMessageToDb(role, content, msg.ts);
-            } catch (SQLException e) {
-                System.out.println("Ошибка записи в БД: " + e.getMessage());
-            }
-            addToIndex(msg, messages.size() - 1);
-        } catch (Exception e) {
-            System.out.println("Ошибка сохранения из модуля: " + e.getMessage());
-        }
-    }
-
-
-    @Override
-    public String callLLM(String prompt, String mode) {
-        try {
-            if ("local".equalsIgnoreCase(mode)) {
-                return askLocal(prompt);
-            } else {
-                return askAPI(prompt);
-            }
-        } catch (Exception e) {
-            return "LLM ошибка: " + e.getMessage();
-        }
-    }
-    @Override
-    public String askLLM(String query, JsonObject state, String column) {
-        try {
-            if (currentMode == Mode.API) return askAPI(query, column);
-            else if (currentMode == Mode.LOCAL) return askLocal(query, column);
-        } catch (Exception e) {
-            System.err.println("[GameAPI] Ошибка LLM: " + e.getMessage());
-        }
-        return "LLM not available";
-    }
-    // ================== КОМАНДЫ ==================
     public static void handleCommand(String cmd) throws IOException {
         String[] parts = cmd.split("\\s+");
 
@@ -1111,105 +873,18 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             return;
         }
         switch (parts[0]) {
-            case ":help" -> {
-                if (parts.length > 1 && parts[1].equalsIgnoreCase("all")) {
-                    System.out.println("""
-                    :mode api|local|manual|programmers  - переключить режим
-                    :model <имя>            - сменить модель
-                    :think on|off           - включить/выключить режим размышлений
-                    :websearch on|off       - включить/выключить авто-поиск в интернете
-                    :persona                - показать текущую персону
-                    :persona save <имя>     - сохранить персону в профиль
-                    :persona load <имя>     - загрузить персону из профиля
-                    :persona new <имя>      - создать новый профиль
-                    :autosave on|off        - вкл/выкл автосохранение
-                    :stream on|off          - вкл/выкл потоковый вывод
-                    :status                 - показать состояние Tool
-                    :models                 - список локальных моделей
-                    :save                   - сохранить сессию в архив
-                    :exit                   - выход
-                    :web                    - открыть чат в браузере
-                    :embed build            - построить эмбеддинги
-                    :embed on|off           - вкл/выкл семантический поиск
-                    :embed auto <N>         - авто-перестроение каждые N сообщений
-                    :embed status           - состояние движка
-                    :persona auto           - обновить персону через ИИ
-                    :persona auto <N>       - авто-обновление каждые N сообщений :persona auto ⚠️ Не рекомендуется при включённом cache hit. ⚠️ Сбрасывает кэш промта (cache miss ~$0.13). ⚠️ Использовать не чаще 100 сообщений.
-                    :persona auto off       - отключить авто-обновление
-                    :remember               - сжать последние 10 сообщений
-                    :memory migrate         - миграция JSON в SQLite (не работает)
-                    :memory status          - состояние долгой памяти (не работает)
-                    :memory search <текст>  - текстовый поиск по памяти (не работает)
-                    :memory auto <N>        - авто-сжатие каждые N сообщений (не работает)
-                    :memory purge <дни>     - удалить старые записи (не работает)
-                    :memorн default <имя>   - установить дефолтную колонку памяти (не работает)
-                    :summarize              - сводка последних 20 сообщений
-                    :import <файл>          - импорт JSON-диалогов
-                    :think on|off           - размышление
-                    :websearch on|off       - поиск в интернете
-                    :theme <имя> <уровень>  - применить тему (1=CSS, 2=CSS+HTML, 3=CSS+HTML+JS)
-                    :theme off              - сбросить тему
-                    :preset                 - пресеты!
-                    :themes                 - показать список доступных тем
-                    :presets                - показать список доступных пресетов
-                    :game off               - отключить api
-                    :game status            - получить статус mode programmers
-                    :game list              - получить все колонки памяти (for easy mode in api)
-                    :game memory <колонка>  -  создать колонку
-                    :game clear <колонка>   - удалить данные из колонки
-                    :game export <колонка>  - экспортировать колонку
-                    :storage default|short|long|archive - выбрать тип архитектуру не рекомендуется для личного использования
-                    :silent on|off          - только запись
-                    :compress on|off        - авто-сжатие
-                    :context dynamic|static -заморозить контекст
-                    :test                   - тестирование всех систем
-                    :clear                  - очистить консоль
-                    :clear session          - сбрасывание активного контекста
-                    :modules
-                    :module enable <hello>
-                    :module disable <hello>
-                    :search engine classic|vec|hybrid  - выбор движка поиска
-                    :vec                                - статус sqlite-vec 
-                    :cache on               - включить построение префикса для Cache Hit
-                    :cache off              - выключить построение префикса для Cache Hit
-                    :hot freeze             - заморозить текущий префикс
-                    :hot refresh            - пересобрать и применить префикс 
-                    :hot status             - проверка статуса кэша
-                    :asktest                - проверка нового движка (временная команда)
-                    :hot config <N>         - регулирует размер префикса (ЧЕМ БОЛЬШЕ ТЕМ БОЛЬШЕ ДЕНЕГ ТРАТИТСЯ ВНАЧАЛЕ И ТЕМ МЕНЬШЕ В ДОЛГОСРОКЕ БОЛЬШИЕ ЗНАЧЕНИЯ ВЫГОДНО ДЛЯ ДЛИННЫХ СЕССИЙ)
-                    :warmtokens <N>         - Настроить количество доступных токенов для теплой памяти (дефолт 32к)
-                    :contextsize            - Настроить количество доступных токенов для холодной памяти и ниже
-                    :url                    - Сменить url (поддерживаются лишь OpenAi форматы!)
-                    
-                   
-            """); // :NeuralFloppy           -узнать новости проекта
-                } else {
-                    System.out.println("""
-            ===== БАЗОВЫЕ КОМАНДЫ =====
-            :mode api|local|manual|programmers
-            :model <имя>            - сменить модель
-            :models                 - список локальных моделей
-            :status                 - состояние Tool
-            :embed on|off           - вкл/выкл эмбеддинги
-            :embed build            - построить эмбеддинги
-            :web                    - открыть веб-интерфейс
-            :exit                   - выход
-
-            Для расширенного списка введи :help all
-            """);
-                }
-            }
+            case ":help" -> HelpCommandHandler.execute(parts);
             // === NeuralFloppy 1.9.2 Новые Команды ===
-
             case ":mode" -> {
                 if (parts.length < 2) {
                     System.out.println("Укажи режим: api, local, manual, programmers");
                     return;
                 }
+
                 switch (parts[1].toLowerCase()) {
-                    case "api" -> currentMode = Mode.API;
-                    case "local" -> currentMode = Mode.LOCAL;
-                    case "manual" -> currentMode = Mode.MANUAL;
+                    case "api" -> currentMode = NeuralFloppyTool2_0_DT_snapchot2.Mode.API;
+                    case "local" -> currentMode = NeuralFloppyTool2_0_DT_snapchot2.Mode.LOCAL;
+                    case "manual" -> currentMode = NeuralFloppyTool2_0_DT_snapchot2.Mode.MANUAL;
                     case "programmers" -> {
                         gameModeEnabled = true;
                         System.out.println("Игровой API активирован. Принимаю запросы на /api/game и /api/full-control");
@@ -1237,65 +912,9 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     }
                 }
             }
-            case ":asktest" -> {
-                String q = String.join(" ", Arrays.copyOfRange(parts, 1, parts.length));
-                AskEngine.AskRequest req = new AskEngine.AskRequest();
-                req.question = q;
-                req.mode = AskEngine.Mode.API;
-                AskEngine.AskResponse resp;
-                try {
-                    resp = AskEngine.ask(req);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-                System.out.println("[ASKTEST] " + resp);
-            }
+            case ":asktest" -> {}
             case ":test" -> {
-                System.out.println("=== Диагностика NeuralFloppy ===");
-                // 1. Папки
-                boolean dirsOk = Files.isDirectory(Path.of("data")) &&
-                        Files.isDirectory(Path.of("archive")) &&
-                        Files.isDirectory(Path.of("personas")) &&
-                        Files.isDirectory(Path.of("themes")) &&
-                        Files.isDirectory(Path.of("presets"));
-                System.out.println("Папки: " + (dirsOk ? "OK" : "ОШИБКА"));
-
-                // 2. Ollama
-                boolean ollamaOk = false;
-                try {
-                    HttpClient client = HttpClient.newHttpClient();
-                    HttpRequest req = HttpRequest.newBuilder()
-                            .uri(URI.create("http://localhost:11434/api/tags"))
-                            .timeout(Duration.ofSeconds(3))
-                            .GET()
-                            .build();
-                    HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
-                    ollamaOk = resp.statusCode() == 200;
-                } catch (Exception e) {
-                    ollamaOk = false;
-                }
-                System.out.println("Ollama: " + (ollamaOk ? "OK" : "НЕДОСТУПНА"));
-
-                // 3. Эмбеддинг-модель
-                boolean embOk = !EmbeddingEngine.vectors.isEmpty() || Files.exists(Path.of("data/embeddings.json"));
-                System.out.println("Эмбеддинги: " + (embOk ? "OK (" + EmbeddingEngine.vectors.size() + " векторов)" : "НЕТ ДАННЫХ"));
-
-                // 4. Память
-                System.out.println("Активных сообщений: " + messages.size());
-                System.out.println("Размер chat.ndjson: " + Files.size(Path.of("chat.ndjson")) + " байт");
-
-                // 5. Веб-сервер
-                boolean webOk = false;
-                try {
-                    Socket socket = new Socket();
-                    socket.connect(new InetSocketAddress("localhost", 8080), 2000);
-                    webOk = true;
-                    socket.close();
-                } catch (Exception e) {
-                    webOk = false;
-                }
-                System.out.println("Веб-сервер (порт 8080): " + (webOk ? "OK" : "НЕ ЗАПУЩЕН"));
-                System.out.println("=== Диагностика завершена ===");
+                return;
             }
             case ":search" -> {
                 if (parts.length < 3 || !parts[1].equalsIgnoreCase("engine")) {
@@ -1393,19 +1012,19 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 }
                 switch (parts[1].toLowerCase()) {
                     case "default" -> {
-                        StorageManager.setMode("default");
+                        NeuralFloppyTool2_0_DT_snapchot2.StorageManager.setMode("default");
                         System.out.println("Режим хранения: классический (NDJSON + SQLite).");
                     }
                     case "short" -> {
-                        StorageManager.setMode("short");
+                        NeuralFloppyTool2_0_DT_snapchot2.StorageManager.setMode("short");
                         System.out.println("Режим хранения: короткий (только NDJSON).");
                     }
                     case "long" -> {
-                        StorageManager.setMode("long");
+                        NeuralFloppyTool2_0_DT_snapchot2.StorageManager.setMode("long");
                         System.out.println("Режим хранения: долгий (прямая запись в SQLite).");
                     }
                     case "archive" -> {
-                        StorageManager.setMode("archive");
+                        NeuralFloppyTool2_0_DT_snapchot2.StorageManager.setMode("archive");
                         System.out.println("Режим хранения: архивный (сразу в холодную память).");
                     }
                     default -> System.out.println("Неизвестный режим хранения.");
@@ -1683,8 +1302,8 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     // Меняем эмбеддинг-модель, если нужно
                     if (preset.has("embed_model")) {
                         String embedModel = preset.get("embed_model").getAsString();
-                        if (!EmbeddingEngine.EMBED_MODEL.equals(embedModel)) {
-                            EmbeddingEngine.EMBED_MODEL = EmbeddingEngine.getFullEmbedModelName(embedModel);
+                        if (!NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.EMBED_MODEL.equals(embedModel)) {
+                            NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.EMBED_MODEL = NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.getFullEmbedModelName(embedModel);
                             System.out.println("Эмбеддинг-модель сменена на " + embedModel + ". Перестрой индекс: :embed build");
                         }
                     }
@@ -1734,10 +1353,10 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                             try {
                                 if (column != null) {
                                     System.out.println("[EMBED] Строю эмбеддинги для колонки '" + column + "'...");
-                                    EmbeddingEngine.buildForColumn(column);
+                                    NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.buildForColumn(column);
                                 } else {
                                     System.out.println("[EMBED] Строю эмбеддинги для глобальной памяти...");
-                                    EmbeddingEngine.build();
+                                    NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.build();
                                 }
                             } catch (Exception e) {
                                 System.out.println("[EMBED] Ошибка: " + e.getMessage());
@@ -1761,7 +1380,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         String newModel = parts[2];
                         boolean useRaw = parts.length > 3 && parts[3].equalsIgnoreCase("raw");
                         if (!useRaw && !newModel.endsWith("-16k")) {
-                            newModel = EmbeddingEngine.getFullEmbedModelName(newModel);
+                            newModel = NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.getFullEmbedModelName(newModel);
                         }
                         boolean hasModel = false;
                         try {
@@ -1798,7 +1417,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                             }
                         }
 
-                        EmbeddingEngine.EMBED_MODEL = newModel;
+                        NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.EMBED_MODEL = newModel;
                         System.out.println("Эмбеддинг-модель сменена на " + newModel + ". Перестрой индекс: :embed build");
                     }
                     case "on" -> {
@@ -1820,7 +1439,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     }
                     case "status" -> {
                         System.out.println("Эмбеддинги: " + (embedEnabled ? "вкл" : "выкл"));
-                        System.out.println("Векторов в памяти: " + EmbeddingEngine.vectors.size());
+                        System.out.println("Векторов в памяти: " + NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.vectors.size());
                         System.out.println("Авто-перестроение: " + (embedAutoThreshold > 0 ? "каждые " + embedAutoThreshold + " сообщ." : "выкл"));
                     }
                     default -> System.out.println("Неизвестная подкоманда :embed");
@@ -1871,14 +1490,14 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                     for (Map<String, String> m : imported) {
                         String role = m.get("role"), content = m.get("content");
                         if (role == null || content == null) continue;
-                        Message msg = new Message(role, content, Instant.now().getEpochSecond());
+                        NeuralFloppyTool2_0_DT_snapchot2.Message msg = new NeuralFloppyTool2_0_DT_snapchot2.Message(role, content, Instant.now().getEpochSecond());
                         messages.add(msg);
                         addToIndex(msg, messages.size() - 1);
                         if (autoSave) appendToNdjson(msg);
                         added++;
                     }
                     System.out.println("Импортировано " + added + " сообщений.");
-                    if (added > 0 && embedEnabled) { System.out.println("Перестраиваю эмбеддинги..."); EmbeddingEngine.build(); }
+                    if (added > 0 && embedEnabled) { System.out.println("Перестраиваю эмбеддинги..."); NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.build(); }
                 } catch (Exception e) { System.out.println("Ошибка импорта: " + e.getMessage()); }
             }
             case ":persona" -> {
@@ -1994,17 +1613,17 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 }
                 System.out.println("Сжимаю последние 10 сообщений в долгую память...");
                 int count = Math.min(10, messages.size());
-                List<Message> recent = messages.subList(messages.size() - count, messages.size());
+                List<NeuralFloppyTool2_0_DT_snapchot2.Message> recent = messages.subList(messages.size() - count, messages.size());
                 StringBuilder history = new StringBuilder();
-                for (Message m : recent) {
+                for (NeuralFloppyTool2_0_DT_snapchot2.Message m : recent) {
                     history.append(m.role).append(": ").append(m.content).append("\n");
                 }
                 String compressPrompt = "Сожми следующий диалог в 1-2 предложения, сохранив суть, ключевые решения и код:\n" + history.toString();
                 try {
                     String compressed = "";
-                    if (currentMode == Mode.API) {
+                    if (currentMode == NeuralFloppyTool2_0_DT_snapchot2.Mode.API) {
                         compressed = askAPI(compressPrompt);
-                    } else if (currentMode == Mode.LOCAL) {
+                    } else if (currentMode == NeuralFloppyTool2_0_DT_snapchot2.Mode.LOCAL) {
                         compressed = askLocal(compressPrompt);
                     }
                     System.out.println("[DEBUG] Сжатый ответ: " + compressed);
@@ -2013,7 +1632,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                         String shortText = compressed.length() > 500 ? compressed.substring(0, 500) : compressed;
                         try {
                             HttpClient client = HttpClient.newHttpClient();
-                            double[] vec = EmbeddingEngine.getEmbedding(client, shortText);
+                            double[] vec = NeuralFloppyTool2_0_DT_snapchot2.EmbeddingEngine.getEmbedding(client, shortText);
                             MemoryManager.addCompressed(shortText, vec);
                             System.out.println("Сжатый фрагмент сохранён в долгую память.");
                         } catch (Exception inner) {
@@ -2037,14 +1656,14 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
                 if (messages.size() < 2) { System.out.println("Мало сообщений для сводки."); return; }
                 System.out.println("Генерирую сводку последних 20 сообщений...");
                 int cnt = Math.min(20, messages.size());
-                List<Message> recent = messages.subList(messages.size() - cnt, messages.size());
+                List<NeuralFloppyTool2_0_DT_snapchot2.Message> recent = messages.subList(messages.size() - cnt, messages.size());
                 StringBuilder hist = new StringBuilder();
-                for (Message m : recent) hist.append(m.role).append(": ").append(m.content).append("\n");
+                for (NeuralFloppyTool2_0_DT_snapchot2.Message m : recent) hist.append(m.role).append(": ").append(m.content).append("\n");
                 String prompt = "Сделай краткий дайджест следующего диалога (3-5 предложений):\n" + hist.toString();
                 try {
                     String summary = "";
-                    if (currentMode == Mode.API) summary = askAPI(prompt);
-                    else if (currentMode == Mode.LOCAL) summary = askLocal(prompt);
+                    if (currentMode == NeuralFloppyTool2_0_DT_snapchot2.Mode.API) summary = askAPI(prompt);
+                    else if (currentMode == NeuralFloppyTool2_0_DT_snapchot2.Mode.LOCAL) summary = askLocal(prompt);
                     System.out.println("Сводка:\n" + summary);
                 } catch (Exception e) {
                     System.out.println("Ошибка сводки: " + e.getMessage());
@@ -2054,6 +1673,245 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
             case ":exit" -> System.exit(0);
             default -> System.out.println("Неизвестная команда. :help для списка.");
         }
+    }
+    public static class AskHandler implements HttpHandler {
+        public void handle(HttpExchange exchange) throws IOException {
+            String queryStr = exchange.getRequestURI().getQuery();
+            String query = "";
+            if (queryStr != null) {
+                for (String param : queryStr.split("&")) {
+                    if (param.startsWith("q=")) {
+                        query = java.net.URLDecoder.decode(param.substring(2), StandardCharsets.UTF_8);
+                        break;
+                    }
+                }
+            }
+            // ===================================
+
+            String answer = "";
+            try {
+                // Сохраняем вопрос пользователя
+                Message userMsg = new Message("USER", query, Instant.now().getEpochSecond());
+                messages.add(userMsg);
+                if (autoSave) appendToNdjson(userMsg);
+                addToIndex(userMsg, messages.size() - 1);
+                try {
+                    DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
+                } catch (Exception e) {
+                    System.out.println("Ошибка записи в БД (web user): " + e.getMessage());
+                }
+
+                // === 2. ПРОВЕРКА SILENT РЕЖИМА ===
+                if (silentMode) {
+                    answer = "[SILENT] Сообщение записано в память. Ответ ИИ пропущен.";
+                    byte[] bytes = answer.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
+                    exchange.sendResponseHeaders(200, bytes.length);
+                    exchange.getResponseBody().write(bytes);
+                    exchange.close();
+                    return; // Выходим, не вызывая ИИ
+                }
+              //  addToIndex(userMsg, messages.size() - 1);
+
+                switch (currentMode) {
+                    case API -> answer = askAPI(query);
+                    case LOCAL -> answer = askLocal(query);
+                    case MANUAL -> answer = "Ручной режим недоступен в веб-интерфейсе.";
+                }
+
+                // Сохраняем ответ
+                Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
+                messages.add(assistantMsg);
+                if (autoSave) appendToNdjson(assistantMsg);
+                try {
+                    DatabaseManager.saveMessageToDb(assistantMsg.role, assistantMsg.content, assistantMsg.ts);
+                } catch (Exception e) {
+                    System.out.println("Ошибка записи в БД: " + e.getMessage());
+                }
+                addToIndex(assistantMsg, messages.size() - 1);
+            } catch (Exception e) {
+                answer = "Ошибка: " + e.getMessage();
+            }
+            if (silentMode) {
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
+                exchange.sendResponseHeaders(200, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write("data: [SILENT] Сообщение записано в память. Ответ ИИ пропущен.\n\n".getBytes(StandardCharsets.UTF_8));
+                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+                os.close();
+                return; // Выходим, не вызывая ИИ
+            }
+            byte[] bytes = answer.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        }
+    }
+
+    static String askLocalStreaming(String question) throws Exception {
+        ensureOllamaRunning();
+        String persona = currentPersona;
+        List<String> ctx = searchContext(question, contextSize);
+        String context = String.join("\n---\n", ctx);
+        String prompt = String.format("""
+            %s
+
+            Вот история твоего общения с учеником:
+            %s
+
+            Ученик спросил: %s
+            Ответь как тот самый наставник:""", persona, context, question);
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:11434/api/generate"))
+                .header("Content-Type", "application/json; charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(Map.of(
+                        "model", currentModel,
+                        "prompt", prompt,
+                        "stream", true,
+                        "options", Map.of("num_ctx", 32768, "num_predict", 2048, "temperature", temperature)
+                )), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
+        StringBuilder fullAnswer = new StringBuilder();
+        String line;
+        while ((line = in.readLine()) != null) {
+            try {
+                JsonObject json = GSON.fromJson(line, JsonObject.class);
+                if (json.has("response")) {
+                    String chunk = json.get("response").getAsString();
+                    System.out.print(chunk);
+                    fullAnswer.append(chunk);
+                }
+                if (json.has("done") && json.get("done").getAsBoolean()) break;
+            } catch (Exception e) {}
+        }
+        System.out.println();
+        return fullAnswer.toString();
+    }
+    public static class AskStreamHandler implements HttpHandler {
+        public void handle(HttpExchange exchange) throws IOException {
+            // === ИСПРАВЛЕННЫЙ ПАРСИНГ URL ===
+            String query = exchange.getRequestURI().getQuery();
+            String q = "";
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    if (param.startsWith("q=")) {
+                        // Отрезаем "q=" (2 символа) и декодируем
+                        q = java.net.URLDecoder.decode(param.substring(2), StandardCharsets.UTF_8);
+                        break;
+                    }
+                }
+            }
+            // =================================
+
+            // Сохраняем вопрос пользователя (теперь q будет чистым!)
+            Message userMsg = new Message("USER", q, Instant.now().getEpochSecond());
+            messages.add(userMsg);
+            if (autoSave) appendToNdjson(userMsg);
+            addToIndex(userMsg, messages.size() - 1);
+            try {
+                DatabaseManager.saveMessageToDb(userMsg.role, userMsg.content, userMsg.ts);
+            } catch (Exception e) {
+                System.out.println("Ошибка записи в БД (web ai): " + e.getMessage());
+            }
+
+            // Проверка Silent режима
+            if (silentMode) {
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
+                exchange.sendResponseHeaders(200, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write("data: [SILENT] Сообщение записано в память. Ответ ИИ пропущен.\n\n".getBytes(StandardCharsets.UTF_8));
+                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+                os.close();
+                return;
+            }
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=UTF-8");
+            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+            exchange.getResponseHeaders().set("Connection", "keep-alive");
+            exchange.sendResponseHeaders(200, 0);
+
+            OutputStream os = exchange.getResponseBody();
+            String answer = "";
+            try {
+                if (currentMode == Mode.API) {
+                    answer = askAPIStreamingToWeb(q, os);
+                } else if (currentMode == Mode.LOCAL) {
+                    answer = askLocalStreamingToWeb(q, os);
+                } else {
+                    os.write("data: Ручной режим не поддерживает стриминг.\n\n".getBytes(StandardCharsets.UTF_8));
+                }
+
+                // Сохраняем ответ (полный текст, собранный из стрима)
+                if (!answer.isBlank()) {
+                    Message assistantMsg = new Message("ASSISTANT", answer, Instant.now().getEpochSecond());
+                    messages.add(assistantMsg);
+                    if (autoSave) appendToNdjson(assistantMsg);
+                    addToIndex(assistantMsg, messages.size() - 1);
+                    try {
+                        DatabaseManager.saveMessageToDb(assistantMsg.role, assistantMsg.content, assistantMsg.ts);
+                    } catch (Exception e) {
+                        System.out.println("Ошибка записи в БД (web ai): " + e.getMessage());
+                    }
+                }
+
+                // Сигнал завершения
+                os.write("data: [DONE]\n\n".getBytes(StandardCharsets.UTF_8));
+            } catch (Exception e) {
+                os.write(("data: Ошибка: " + e.getMessage() + "\n\n").getBytes(StandardCharsets.UTF_8));
+            } finally {
+                os.close();
+            }
+        }
+    }
+    @Override
+    public List<String> findContext(String query) {
+        return searchContext(query, contextSize);
+    }
+
+    @Override
+    public void saveMessage(String role, String content) {
+        try {
+            Message msg = new Message(role, content, Instant.now().getEpochSecond());
+            messages.add(msg);
+            if (autoSave) appendToNdjson(msg);
+            try {
+                DatabaseManager.saveMessageToDb(role, content, msg.ts);
+            } catch (SQLException e) {
+                System.out.println("Ошибка записи в БД: " + e.getMessage());
+            }
+            addToIndex(msg, messages.size() - 1);
+        } catch (Exception e) {
+            System.out.println("Ошибка сохранения из модуля: " + e.getMessage());
+        }
+    }
+
+
+    @Override
+    public String callLLM(String prompt, String mode) {
+        try {
+            if ("local".equalsIgnoreCase(mode)) {
+                return askLocal(prompt);
+            } else {
+                return askAPI(prompt);
+            }
+        } catch (Exception e) {
+            return "LLM ошибка: " + e.getMessage();
+        }
+    }
+    @Override
+    public String askLLM(String query, JsonObject state, String column) {
+        try {
+            if (currentMode == Mode.API) return askAPI(query, column);
+            else if (currentMode == Mode.LOCAL) return askLocal(query, column);
+        } catch (Exception e) {
+            System.err.println("[GameAPI] Ошибка LLM: " + e.getMessage());
+        }
+        return "LLM not available";
     }
 
     // ================== ИНДЕКС, ПОИСК, СОХРАНЕНИЕ ==================
@@ -2390,6 +2248,7 @@ public class NeuralFloppyTool2_0_DT_snapchot2 implements NeuralFloppyCore {
         return ModuleLoader.listNames();
     }
     public static class EmbeddingEngine {
+        @Getter
         static List<double[]> vectors = new ArrayList<>();
         static List<String> texts = new ArrayList<>();
         static String EMBED_MODEL = "nomic-embed-text"; // по умолчанию
